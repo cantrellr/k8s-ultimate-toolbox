@@ -1,0 +1,66 @@
+{
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "tools": [
+        "create_or_update_file",
+        "search_repositories",
+        "create_repository",
+        "get_file_contents",
+        "push_files",
+        "create_issue",
+        "create_pull_request",
+        "fork_repository",
+        "create_branch"
+      ]
+    },
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "${workspaceFolder}"
+      ],
+      "tools": [
+        "read_file",
+        "read_multiple_files",
+        "write_file",
+        "edit_file",
+        "create_directory",
+        "list_directory",
+        "move_file",
+        "search_files",
+        "get_file_info",
+        "list_allowed_directories"
+      ]
+    },
+    "kubernetes": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-kubernetes"
+      ],
+      "env": {
+        "KUBECONFIG": "${env:KUBECONFIG}"
+      },
+      "tools": [
+        "kubectl_apply",
+        "kubectl_get",
+        "kubectl_describe",
+        "kubectl_delete",
+        "kubectl_logs",
+        "kubectl_exec"
+      ]
+    }
+  }
+}

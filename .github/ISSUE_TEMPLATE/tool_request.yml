@@ -1,0 +1,107 @@
+name: Tool Request
+description: Request a new tool to be added to the toolbox
+title: "[Tool]: Add "
+labels: ["tool-request", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new tool! Please fill out the form below.
+
+  - type: input
+    id: tool-name
+    attributes:
+      label: Tool Name
+      description: Name of the tool you'd like added
+      placeholder: "e.g., kubeshark"
+    validations:
+      required: true
+
+  - type: input
+    id: tool-url
+    attributes:
+      label: Tool URL
+      description: Link to the tool's repository or website
+      placeholder: "https://github.com/..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Tool Description
+      description: What does this tool do?
+      placeholder: Describe the tool's purpose...
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: How would you use this tool in Kubernetes administration?
+      placeholder: Describe your use case...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Tool Category
+      description: What category does this tool belong to?
+      options:
+        - Kubernetes CLI/Management
+        - Networking/Debugging
+        - Security/Scanning
+        - Monitoring/Observability
+        - Database Client
+        - Cloud Provider CLI
+        - Development/Productivity
+        - Service Mesh
+        - Storage/Backup
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Architecture Support
+      description: What architectures does the tool support?
+      options:
+        - amd64 only
+        - arm64 only
+        - Both amd64 and arm64
+        - Unknown
+    validations:
+      required: true
+
+  - type: input
+    id: size
+    attributes:
+      label: Approximate Size
+      description: How large is the tool (if known)?
+      placeholder: "e.g., ~50MB"
+
+  - type: textarea
+    id: installation
+    attributes:
+      label: Installation Instructions
+      description: How is the tool typically installed?
+      render: bash
+      placeholder: |
+        # Example installation
+        curl -Lo tool https://example.com/tool
+        chmod +x tool
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: This tool is open source or freely available
+          required: true
+        - label: This tool is relevant to Kubernetes administration
+          required: true
+        - label: I have searched existing issues to ensure this hasn't been requested
+          required: true

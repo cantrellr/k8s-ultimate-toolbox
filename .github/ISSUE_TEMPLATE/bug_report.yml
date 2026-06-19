@@ -1,0 +1,121 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the form below to help us understand and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe the bug...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Deploy the chart with '...'
+        2. Exec into the pod '...'
+        3. Run command '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: Describe what should have happened...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened
+      placeholder: Describe what actually happened...
+    validations:
+      required: true
+
+  - type: input
+    id: toolbox-version
+    attributes:
+      label: Toolbox Version
+      description: Chart version or image tag
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment-type
+    attributes:
+      label: Deployment Type
+      description: How is the toolbox deployed?
+      options:
+        - Online (public registry)
+        - Offline/Air-gapped
+        - Local development
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Please provide environment details
+      placeholder: |
+        - Kubernetes Distribution: (e.g., EKS, AKS, GKE, RKE2, k3s, kind)
+        - Kubernetes Version: (kubectl version --short)
+        - Helm Version: (helm version --short)
+        - Container Runtime: (Docker, containerd, CRI-O)
+        - OS: (e.g., Ubuntu 22.04)
+    validations:
+      required: true
+
+  - type: textarea
+    id: values
+    attributes:
+      label: Helm Values
+      description: Relevant parts of your values.yaml (remove any sensitive data)
+      render: yaml
+      placeholder: |
+        image:
+          repository: your-registry/ultimate-k8s-toolbox
+          tag: "1.0.0"
+        # ... relevant configuration
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Any relevant logs (kubectl logs, describe output, etc.)
+      render: shell
+      placeholder: Paste logs here...
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, screenshots, or information about the problem
+      placeholder: Add any other context...
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to ensure this bug hasn't been reported
+          required: true
+        - label: I have removed any sensitive information from this report
+          required: true

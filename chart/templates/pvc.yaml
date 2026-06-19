@@ -1,0 +1,15 @@
+{{- if and .Values.workspace.enabled .Values.workspace.storageClass }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ultimate-k8s-toolbox.fullname" . }}-workspace
+  labels:
+    {{- include "ultimate-k8s-toolbox.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: {{ .Values.workspace.size | default "10Gi" }}
+  storageClassName: {{ .Values.workspace.storageClass }}
+{{- end }}

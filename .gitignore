@@ -1,0 +1,115 @@
+# Build and distribution
+dist/
+*.tar.gz
+*.tgz
+*.tar
+
+# Container images
+*.img
+*.oci
+
+# Helm packages
+*.tgz
+chart/*.tgz
+
+# Logs
+*.log
+logs/
+build-output.log
+build-latest.log
+offline-bundle-build.log
+
+# Certificates and keys (security)
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt.key
+certs/**/*.key
+certs/**/*.pem
+certs/**/*.p12
+certs/**/*.pfx
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+*.sublime-*
+.vs/
+
+# OS files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Backup files
+*.backup
+*.bak
+*.old
+Makefile.backup
+Makefile.clean
+Makefile.corrupted
+
+# Generated files
+offline-bundle/
+encrypted-bundle/
+
+# Kubernetes secrets (if any test files)
+*secret*.yaml
+*-secret.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Node (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test artifacts
+test-results/
+coverage/
+
+# Build cache
+.cache/
+.build/
+
+# Chart dependencies
+chart/charts/
+chart/Chart.lock
+
+# Encryption artifacts (keep certificates but not keys)
+encrypted_keys/
+*.enc
+
+# Development
+.env
+.env.local
+*.local

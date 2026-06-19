@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/cantrellr/ultimate-k8s-toolbox#readme
+    about: Check the documentation before opening an issue
+  - name: 💬 Discussions
+    url: https://github.com/cantrellr/ultimate-k8s-toolbox/discussions
+    about: Ask questions and discuss ideas
+  - name: 🔒 Security Vulnerabilities
+    url: https://github.com/cantrellr/ultimate-k8s-toolbox/security/advisories/new
+    about: Report security vulnerabilities privately

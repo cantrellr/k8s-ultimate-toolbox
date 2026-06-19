@@ -1,0 +1,39 @@
+# MongoDB namespace deployment with custom service account
+# This example shows deployment into a MongoDB namespace reusing existing RBAC
+#
+# USE CASE: Deploy the toolbox into the same namespace as MongoDB to debug
+# database connectivity, run mongo shell commands, and troubleshoot issues.
+
+global:
+  imageRegistry: "registry.example.com"  # Your private registry
+  namespaceOverride: "mongodb"
+
+image:
+  repository: "platform/ultimate-k8s-toolbox"
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: registry-secret  # Your registry pull secret
+
+serviceAccount:
+  # Reuse existing MongoDB operator service account
+  create: false
+  name: "mongodb-operator"
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "1"
+    memory: "2Gi"
+
+podLabels:
+  app: mongodb-toolbox
+  team: database
+
+container:
+  env:
+    - name: MONGODB_URI
+      value: "mongodb://mongodb.mongodb.svc.cluster.local:27017"

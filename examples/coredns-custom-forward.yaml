@@ -1,0 +1,85 @@
+# CoreDNS ConfigMap Patch for Custom DNS Forwarding
+# 
+# This example configures CoreDNS to forward DNS queries for specific domains
+# to custom (internal) DNS servers instead of the default upstream resolvers.
+#
+# USE CASE: When your Kubernetes cluster needs to resolve internal/private
+# DNS names that are not publicly resolvable (e.g., internal services,
+# Active Directory domains, split-horizon DNS).
+#
+# IMPORTANT: Server blocks are matched by most specific suffix first.
+# If your Kubernetes cluster domain is a subdomain of a forwarded domain
+# (e.g., k8.example.com under example.com), you MUST create a separate
+# server block for it to prevent the parent domain from intercepting
+# Kubernetes service queries.
+#
+# CUSTOMIZATION REQUIRED:
+#   1. Replace 'k8.example.com' with your cluster domain (if not cluster.local)
+#   2. Replace 'example.com' and 'example.net' with your internal domains
+#   3. Replace '10.0.0.1' and '10.0.0.2' with your internal DNS server IPs
+#   4. Update ConfigMap name for your distribution:
+#      - RKE2: rke2-coredns-rke2-coredns
+#      - Standard k8s: coredns
+#      - EKS: coredns
+#
+# Apply with:
+#   kubectl apply -f coredns-custom-forward.yaml
+#
+# After applying, restart CoreDNS:
+#   kubectl rollout restart deployment <coredns-deployment-name> -n kube-system
+#
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rke2-coredns-rke2-coredns  # Change for your distribution
+  namespace: kube-system
+data:
+  Corefile: |
+    # Kubernetes cluster domain - explicit handler
+    # Required when cluster domain is subdomain of a forwarded domain
+    k8.example.com:53 cluster.local:53 {
+        errors
+        cache 30
+        kubernetes k8.example.com cluster.local in-addr.arpa ip6.arpa {
+            pods insecure
+            fallthrough in-addr.arpa ip6.arpa
+            ttl 30
+        }
+    }
+    # Default server block for all other queries
+    .:53 {
+        errors
+        health {
+            lameduck 10s
+        }
+        ready
+        kubernetes k8.example.com cluster.local in-addr.arpa ip6.arpa {
+            pods insecure
+            fallthrough in-addr.arpa ip6.arpa
+            ttl 30
+        }
+        prometheus 0.0.0.0:9153
+        forward . /etc/resolv.conf
+        cache 30
+        loop
+        reload
+        loadbalance
+    }
+    # Forward example.com to internal DNS servers
+    # (excludes k8.example.com which is handled above)
+    example.com:53 {
+        errors
+        cache 30
+        forward . 10.0.0.1 10.0.0.2 {
+            policy sequential
+        }
+    }
+    # Forward example.net to internal DNS servers
+    example.net:53 {
+        errors
+        cache 30
+        forward . 10.0.0.1 10.0.0.2 {
+            policy sequential
+        }
+    }

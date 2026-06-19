@@ -1,0 +1,17 @@
+#!/bin/bash
+# Quick exec into the latest running toolbox pod
+# Usage: ./toolbox [namespace]
+
+NAMESPACE="${1:-toolbox}"
+
+POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=ultimate-k8s-toolbox \
+  --field-selector=status.phase=Running \
+  -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null)
+
+if [[ -z "$POD" ]]; then
+  echo "No running toolbox pod found in namespace '$NAMESPACE'"
+  exit 1
+fi
+
+echo "Connecting to: $POD"
+kubectl exec -it -n "$NAMESPACE" "$POD" -c toolbox -- /bin/bash

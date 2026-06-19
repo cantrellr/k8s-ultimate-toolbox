@@ -1,0 +1,93 @@
+# Offline/Air-gapped deployment - uses internal registry
+# Use this configuration for deploying in restricted environments without internet access
+# 
+# Prerequisites:
+# 1. Push the toolbox image to your internal registry:
+#    docker tag ultimate-k8s-toolbox:latest myregistry.local:5000/platform/ultimate-k8s-toolbox:latest
+#    docker push myregistry.local:5000/platform/ultimate-k8s-toolbox:latest
+#
+# 2. Create image pull secret (if registry requires authentication):
+#    kubectl create secret docker-registry regcred \
+#      --docker-server=myregistry.local:5000 \
+#      --docker-username=myuser \
+#      --docker-password=mypass \
+#      --docker-email=myemail@example.com \
+#      -n toolbox
+#
+# 3. (Optional) Create CA certificate secret for internal CA trust:
+#    kubectl create secret generic toolbox-ca-certs \
+#      --from-file=root-ca.crt=/path/to/root-ca.crt \
+#      --from-file=subordinate-ca.crt=/path/to/sub-ca.crt \
+#      -n toolbox
+
+global:
+  # Set your internal/offline registry here
+  imageRegistry: "myregistry.local:5000"
+  # Optional: Override namespace
+  namespaceOverride: ""
+
+image:
+  # Repository path within the registry (without the registry prefix)
+  # The full image will be: {global.imageRegistry}/{repository}:{tag}
+  # Example result: myregistry.local:5000/platform/ultimate-k8s-toolbox:v1.0.2
+  repository: "platform/ultimate-k8s-toolbox"
+  tag: "v1.0.2"
+  pullPolicy: IfNotPresent
+
+# Reference the image pull secret created above
+imagePullSecrets:
+  - name: regcred
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+
+# =============================================================================
+# Custom CA Certificate Configuration (Enterprise/Internal PKI)
+# =============================================================================
+# Enable this to trust your organization's internal CA certificates.
+# This is essential for:
+#   - Connecting to MongoDB with TLS using internal CAs
+#   - Accessing internal HTTPS services
+#   - Git operations over HTTPS to internal repositories
+#   - Any TLS connections to services using internal PKI
+#
+# Before enabling, create the CA secret:
+#   kubectl create secret generic toolbox-ca-certs \
+#     --from-file=root-ca.crt=/path/to/root-ca.crt \
+#     --from-file=subordinate-ca.crt=/path/to/sub-ca.crt \
+#     -n toolbox
+#
+# Or use the deploy script with CA flags:
+#   ./deploy-offline.sh --root-ca /path/to/root-ca.crt \
+#                       --subordinate-ca /path/to/sub-ca.crt
+# =============================================================================
+customCA:
+  # Set to true to enable custom CA certificate trust
+  enabled: false
+  # Name of the secret containing CA certificates
+  secretName: "toolbox-ca-certs"
+  # Mount path inside the container
+  mountPath: /etc/ssl/custom-ca
+
+# Add node selector if deploying to specific nodes
+nodeSelector: {}
+  # Example: Only deploy to worker nodes
+  # node-role.kubernetes.io/worker: "true"
+
+# Add tolerations if needed for tainted nodes
+tolerations: []
+  # Example:
+  # - key: "offline-node"
+  #   operator: "Equal"
+  #   value: "true"
+  #   effect: "NoSchedule"
