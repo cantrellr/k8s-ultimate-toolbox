@@ -32,179 +32,172 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.customCA.enabled }}
-      # Init container runs as root to update the system CA trust store
       initContainers:
-      - name: update-ca-trust
-        image: {{ include "ultimate-k8s-toolbox.image" . }}
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
-        securityContext:
-          runAsUser: 0
-          runAsNonRoot: false
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-              - ALL
-        command:
-          - /bin/bash
-          - -c
-          - |
-            set -e
-            echo "[CA-TRUST] Starting CA certificate installation..."
-            
-            # Check if custom CA certificates are mounted
-            CA_SOURCE="{{ .Values.customCA.mountPath | default "/etc/ssl/custom-ca" }}"
-            CA_TARGET="/usr/local/share/ca-certificates/custom"
-            
-            if [ ! -d "$CA_SOURCE" ] || [ -z "$(ls -A $CA_SOURCE 2>/dev/null)" ]; then
-              echo "[CA-TRUST] No custom CA certificates found in $CA_SOURCE"
-              # Still copy existing trust store to shared volume (dereference symlinks)
-              cp -rL /etc/ssl/certs/* /shared-ca-certs/ 2>/dev/null || true
-              exit 0
-            fi
-            
-            # Create target directory
-            mkdir -p "$CA_TARGET"
-            
-            # Copy certificates from mount to system CA directory
-            CERTS_INSTALLED=0
-            for cert in "$CA_SOURCE"/*.crt "$CA_SOURCE"/*.pem; do
-              if [ -f "$cert" ]; then
-                cert_name=$(basename "$cert")
-                # Validate certificate format
-                if openssl x509 -in "$cert" -noout 2>/dev/null; then
-                  target_name="${cert_name%.*}.crt"
-                  cp "$cert" "$CA_TARGET/$target_name"
-                  echo "[CA-TRUST] Installed: $cert_name"
-                  CERTS_INSTALLED=$((CERTS_INSTALLED + 1))
-                else
-                  echo "[CA-TRUST] Skipping invalid certificate: $cert_name"
-                fi
+        - name: update-ca-trust
+          image: {{ include "ultimate-k8s-toolbox.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "[CA-TRUST] Starting CA certificate installation..."
+              CA_SOURCE="{{ .Values.customCA.mountPath | default "/etc/ssl/custom-ca" }}"
+              CA_TARGET="/usr/local/share/ca-certificates/custom"
+
+              if [ ! -d "$CA_SOURCE" ] || [ -z "$(ls -A $CA_SOURCE 2>/dev/null)" ]; then
+                echo "[CA-TRUST] No custom CA certificates found in $CA_SOURCE"
+                cp -rL /etc/ssl/certs/* /shared-ca-certs/ 2>/dev/null || true
+                exit 0
               fi
-            done
-            
-            if [ $CERTS_INSTALLED -gt 0 ]; then
-              echo "[CA-TRUST] Running update-ca-certificates --fresh --verbose..."
-              update-ca-certificates --fresh --verbose
-              echo "[CA-TRUST] CA trust store updated with $CERTS_INSTALLED custom certificate(s)"
-            else
-              echo "[CA-TRUST] No valid certificates found to install"
-            fi
-            
-            # Copy the updated trust store to shared volume for main container
-            # Use -L to dereference symlinks (critical: symlinks point to paths that won't exist in main container)
-            cp -rL /etc/ssl/certs/* /shared-ca-certs/
-            echo "[CA-TRUST] Trust store copied to shared volume (symlinks dereferenced)"
-        volumeMounts:
-        - name: custom-ca-certs
-          mountPath: {{ .Values.customCA.mountPath | default "/etc/ssl/custom-ca" }}
-          readOnly: true
-        - name: shared-ca-certs
-          mountPath: /shared-ca-certs
+
+              mkdir -p "$CA_TARGET"
+              CERTS_INSTALLED=0
+              for cert in "$CA_SOURCE"/*.crt "$CA_SOURCE"/*.pem; do
+                if [ -f "$cert" ]; then
+                  cert_name=$(basename "$cert")
+                  if openssl x509 -in "$cert" -noout 2>/dev/null; then
+                    target_name="${cert_name%.*}.crt"
+                    cp "$cert" "$CA_TARGET/$target_name"
+                    echo "[CA-TRUST] Installed: $cert_name"
+                    CERTS_INSTALLED=$((CERTS_INSTALLED + 1))
+                  else
+                    echo "[CA-TRUST] Skipping invalid certificate: $cert_name"
+                  fi
+                fi
+              done
+
+              if [ $CERTS_INSTALLED -gt 0 ]; then
+                update-ca-certificates --fresh --verbose
+                echo "[CA-TRUST] CA trust store updated with $CERTS_INSTALLED custom certificate(s)"
+              else
+                echo "[CA-TRUST] No valid certificates found to install"
+              fi
+
+              cp -rL /etc/ssl/certs/* /shared-ca-certs/
+              echo "[CA-TRUST] Trust store copied to shared volume"
+          volumeMounts:
+            - name: custom-ca-certs
+              mountPath: {{ .Values.customCA.mountPath | default "/etc/ssl/custom-ca" }}
+              readOnly: true
+            - name: shared-ca-certs
+              mountPath: /shared-ca-certs
       {{- end }}
       containers:
-      - name: toolbox
-        image: {{ include "ultimate-k8s-toolbox.image" . }}
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
-        {{- with .Values.container.command }}
-        command:
-          {{- toYaml . | nindent 10 }}
+        - name: toolbox
+          image: {{ include "ultimate-k8s-toolbox.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.container.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.container.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            {{- with .Values.container.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            {{- omit .Values.livenessProbe "enabled" | toYaml | nindent 12 }}
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            {{- omit .Values.readinessProbe "enabled" | toYaml | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.workspace.enabled }}
+            - name: workspace
+              mountPath: /workspace
+              readOnly: false
+            {{- end }}
+            {{- if .Values.customCA.enabled }}
+            - name: custom-ca-certs
+              mountPath: {{ .Values.customCA.mountPath | default "/etc/ssl/custom-ca" }}
+              readOnly: true
+            - name: shared-ca-certs
+              mountPath: /etc/ssl/certs
+              readOnly: true
+            {{- end }}
+            {{- with .Values.container.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- if .Values.keycloakCli.enabled }}
+        - name: keycloak-cli
+          image: {{ default (printf "%s:%s" .Values.keycloakCli.image.repository .Values.keycloakCli.image.tag) .Values.keycloakCli.image.fullImageOverride | quote }}
+          imagePullPolicy: {{ .Values.keycloakCli.image.pullPolicy }}
+          {{- with .Values.keycloakCli.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.keycloakCli.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- with .Values.keycloakCli.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
         {{- end }}
-        {{- with .Values.container.args }}
-        args:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
-        env:
-        - name: POD_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        - name: POD_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-        - name: POD_IP
-          valueFrom:
-            fieldRef:
-              fieldPath: status.podIP
-        {{- with .Values.container.env }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-        {{- with .Values.securityContext }}
-        securityContext:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
-        {{- with .Values.resources }}
-        resources:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
-        {{- if .Values.livenessProbe.enabled }}
-        livenessProbe:
-          {{- omit .Values.livenessProbe "enabled" | toYaml | nindent 10 }}
-        {{- end }}
-        {{- if .Values.readinessProbe.enabled }}
-        readinessProbe:
-          {{- omit .Values.readinessProbe "enabled" | toYaml | nindent 10 }}
-        {{- end }}
-        volumeMounts:
+      volumes:
         {{- if .Values.workspace.enabled }}
         - name: workspace
-          mountPath: /workspace
-          readOnly: false
+          {{- if .Values.workspace.storageClass }}
+          persistentVolumeClaim:
+            claimName: {{ include "ultimate-k8s-toolbox.fullname" . }}-workspace
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         {{- end }}
         {{- if .Values.customCA.enabled }}
         - name: custom-ca-certs
-          mountPath: {{ .Values.customCA.mountPath | default "/etc/ssl/custom-ca" }}
-          readOnly: true
+          secret:
+            secretName: {{ .Values.customCA.secretName | default "toolbox-ca-certs" }}
+            optional: true
         - name: shared-ca-certs
-          mountPath: /etc/ssl/certs
-          readOnly: true
+          emptyDir: {}
         {{- end }}
-        {{- with .Values.container.volumeMounts }}
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
-      {{- if .Values.keycloakCli.enabled }}
-      - name: keycloak-cli
-        image: {{ .Values.keycloakCli.image.repository }}:{{ .Values.keycloakCli.image.tag }}
-        imagePullPolicy: {{ .Values.keycloakCli.image.pullPolicy }}
-        {{- with .Values.keycloakCli.command }}
-        command:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
-        {{- with .Values.keycloakCli.args }}
-        args:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
-        env:
-        - name: POD_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        - name: POD_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-      {{- end }}
-      volumes:
-      {{- if .Values.workspace.enabled }}
-      - name: workspace
-        {{- if .Values.workspace.storageClass }}
-        persistentVolumeClaim:
-          claimName: {{ include "ultimate-k8s-toolbox.fullname" . }}-workspace
-        {{- else }}
-        emptyDir: {}
-        {{- end }}
-      {{- end }}
-      {{- if .Values.customCA.enabled }}
-      - name: custom-ca-certs
-        secret:
-          secretName: {{ .Values.customCA.secretName | default "toolbox-ca-certs" }}
-          optional: true
-      - name: shared-ca-certs
-        emptyDir: {}
-      {{- end }}
-      {{- with .Values.volumes }}
+        {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
