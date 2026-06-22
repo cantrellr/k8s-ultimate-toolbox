@@ -1,12 +1,13 @@
 apiVersion: v2
 name: ultimate-k8s-toolbox
 description: |
-  A comprehensive Kubernetes administration workstation with 50+ pre-installed tools
-  for debugging, troubleshooting, and managing Kubernetes clusters. Supports air-gapped
-  deployments, custom CA certificates, and multi-architecture builds (amd64/arm64).
+  A comprehensive Kubernetes administration workstation with pinned tooling for
+  cluster, identity, database, networking, storage, and air-gapped diagnostics.
+  Includes Kubernetes, Helm, MongoDB, Keycloak, PostgreSQL, TLS, and network
+  troubleshooting utilities.
 type: application
-version: 1.0.2           # Chart version - follows SemVer
-appVersion: "1.0.2"      # Toolbox image version - patch release
+version: 1.1.0
+appVersion: "1.1.0"
 keywords:
   - kubernetes
   - toolbox
@@ -16,22 +17,19 @@ keywords:
   - troubleshooting
   - air-gapped
   - offline
-  - k9s
-  - devops
+  - keycloak
+  - postgresql
+  - mongodb
   - sre
   - platform-engineering
 maintainers:
   - name: Cantrell R
     url: https://github.com/cantrellr
-home: https://github.com/cantrellr/ultimate-k8s-toolbox
+home: https://github.com/cantrellr/k8s-ultimate-toolbox
 sources:
-  - https://github.com/cantrellr/ultimate-k8s-toolbox
-icon: https://raw.githubusercontent.com/cantrellr/ultimate-k8s-toolbox/main/docs/icon.png
+  - https://github.com/cantrellr/k8s-ultimate-toolbox
 annotations:
   artifacthub.io/license: MIT
   artifacthub.io/category: integration-delivery
-  artifacthub.io/containsSecurityUpdates: "false"
+  artifacthub.io/containsSecurityUpdates: "true"
   artifacthub.io/prerelease: "false"
-  artifacthub.io/signKey: |
-    fingerprint: ""
-    url: ""
