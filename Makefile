@@ -145,18 +145,7 @@ test-image:
 	else \
 		RUNNER="$(NERDCTL) --namespace $(NERDCTL_NAMESPACE) run --rm $(TOOLBOX_IMAGE)"; \
 	fi; \
-	$$RUNNER bash -lc "show-versions.sh; \
-	  kubectl version --client=true >/dev/null; \
-	  helm version --short >/dev/null; \
-	  yq --version >/dev/null; \
-	  kcadm.sh --help >/dev/null; \
-	  psql --version >/dev/null; \
-	  pg_isready --version >/dev/null; \
-	  pg-diagnostics.sh --help >/dev/null; \
-	  mongosh --version >/dev/null; \
-	  mongodump --version >/dev/null; \
-	  tridentctl version --client >/dev/null 2>&1; \
-	  echo '✓ critical tools verified'"
+	$$RUNNER bash -lc "show-versions.sh; kubectl version --client=true >/dev/null; helm version --short >/dev/null; yq --version >/dev/null; kcadm.sh --help >/dev/null; psql --version >/dev/null; pg_isready --version >/dev/null; pg-diagnostics.sh --help >/dev/null; mongosh --version >/dev/null; mongodump --version >/dev/null; tridentctl version --client >/dev/null 2>&1; echo '✓ critical tools verified'"
 
 .PHONY: package-chart
 package-chart:
@@ -173,8 +162,8 @@ create-scripts:
 	@mkdir -p $(SCRIPTS_DIR)
 	@if [ -f scripts/deploy-offline.sh.template ]; then \
 		cp scripts/deploy-offline.sh.template $(SCRIPTS_DIR)/deploy-offline.sh; \
-		sed -i 's/^IMAGE_REPO=.*/IMAGE_REPO=$$(printf "%q" "$(TOOLBOX_IMAGE_REPO)")/' $(SCRIPTS_DIR)/deploy-offline.sh || true; \
-		sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=$$(printf "%q" "$(TOOLBOX_IMAGE_TAG)")/' $(SCRIPTS_DIR)/deploy-offline.sh || true; \
+		sed -i 's|^IMAGE_REPO=.*|IMAGE_REPO=$${IMAGE_REPO:-"$(TOOLBOX_IMAGE_REPO)"}|' $(SCRIPTS_DIR)/deploy-offline.sh || true; \
+		sed -i 's|^IMAGE_TAG=.*|IMAGE_TAG=$${IMAGE_TAG:-"$(TOOLBOX_IMAGE_TAG)"}|' $(SCRIPTS_DIR)/deploy-offline.sh || true; \
 		chmod +x $(SCRIPTS_DIR)/deploy-offline.sh; \
 	fi
 	@printf '%s\n' \
