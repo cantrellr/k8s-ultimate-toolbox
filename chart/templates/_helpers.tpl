@@ -7,8 +7,6 @@ Expand the name of the chart.
 
 {{/*
 Create a default fully qualified app name.
-We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
-If release name contains chart name it will be used as a full name.
 */}}
 {{- define "ultimate-k8s-toolbox.fullname" -}}
 {{- if .Values.fullnameOverride }}
@@ -31,7 +29,7 @@ Create chart name and version as used by the chart label.
 {{- end }}
 
 {{/*
-Common labels
+Common labels.
 */}}
 {{- define "ultimate-k8s-toolbox.labels" -}}
 helm.sh/chart: {{ include "ultimate-k8s-toolbox.chart" . }}
@@ -43,7 +41,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
-Selector labels
+Selector labels.
 */}}
 {{- define "ultimate-k8s-toolbox.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "ultimate-k8s-toolbox.name" . }}
@@ -51,7 +49,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Create the name of the service account to use
+Create the name of the service account to use.
 */}}
 {{- define "ultimate-k8s-toolbox.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
@@ -62,8 +60,7 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Namespace to use: global.namespaceOverride (if set) otherwise the Helm release namespace.
-This enables deploying to a specific namespace regardless of where helm is run from.
+Namespace to use: global.namespaceOverride if set; otherwise the Helm release namespace.
 */}}
 {{- define "ultimate-k8s-toolbox.namespace" -}}
 {{- if .Values.global.namespaceOverride }}
@@ -74,27 +71,25 @@ This enables deploying to a specific namespace regardless of where helm is run f
 {{- end }}
 
 {{/*
-Image with optional registry prefix.
-This is the key helper for offline/air-gapped deployments.
-If global.imageRegistry is set, prepend it to the repository; otherwise use repository as-is.
+Image with optional registry prefix for offline/air-gapped deployments.
 
 Examples:
-  1. Online (no global.imageRegistry):
-     repository: "ultimate-k8s-toolbox"
-     tag: "latest"
-     Result: "ultimate-k8s-toolbox:latest"
+  Online:
+    repository: "ultimate-k8s-toolbox"
+    tag: "v1.1.0"
+    Result: "ultimate-k8s-toolbox:v1.1.0"
 
-  2. Offline with simple registry:
-     global.imageRegistry: "myregistry.local:5000"
-     repository: "ultimate-k8s-toolbox"
-     tag: "latest"
-     Result: "myregistry.local:5000/ultimate-k8s-toolbox:latest"
+  Offline with simple registry:
+    global.imageRegistry: "myregistry.local:5000"
+    repository: "ultimate-k8s-toolbox"
+    tag: "v1.1.0"
+    Result: "myregistry.local:5000/ultimate-k8s-toolbox:v1.1.0"
 
-  3. Offline with project path:
-     global.imageRegistry: "harbor.internal.com"
-     repository: "platform/ultimate-k8s-toolbox"
-     tag: "v1.0.2"
-     Result: "harbor.internal.com/platform/ultimate-k8s-toolbox:v1.0.2"
+  Offline with project path:
+    global.imageRegistry: "harbor.internal.com"
+    repository: "platform/ultimate-k8s-toolbox"
+    tag: "v1.1.0"
+    Result: "harbor.internal.com/platform/ultimate-k8s-toolbox:v1.1.0"
 */}}
 {{- define "ultimate-k8s-toolbox.image" -}}
 {{- $registry := .Values.global.imageRegistry | default "" }}
@@ -109,7 +104,6 @@ Examples:
 
 {{/*
 Generate combined CA bundle from all certificates.
-Used when customCA.createSecret is true to create a single bundle file.
 */}}
 {{- define "ultimate-k8s-toolbox.caBundle" -}}
 {{- $bundle := "" }}
