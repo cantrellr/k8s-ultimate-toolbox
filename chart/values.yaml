@@ -1,46 +1,30 @@
+# Ultimate K8s Toolbox Helm values
+
 workspace:
   enabled: true
-  # By default, use an emptyDir volume for /workspace (ephemeral)
-  # To use a PersistentVolumeClaim instead, set a storageClass name below.
-  # When storageClass is non-empty, a PVC of the given size will be created
-  # and mounted at /workspace.
+  # By default, /workspace is an ephemeral emptyDir.
+  # Set storageClass to create a PVC for persistent diagnostics output.
   size: 10Gi
   storageClass: ""
 
-# Global values
 global:
-  # Optional registry prefix for offline/air-gapped environments
+  # Optional registry prefix for offline/air-gapped environments.
   # Examples:
   #   - "myregistry.local:5000"
-  #   - "altregistry.dev.kube"
-  #   - "harbor.internal.com/platform"
-  # If empty, image.repository is used as-is (pulls from Docker Hub or specified registry)
+  #   - "altregistry.dev.kube:8443/library"
+  #   - "harbor.internal/platform"
   imageRegistry: ""
 
-  # Optional namespace override.
-  # If empty, the Helm release namespace (.Release.Namespace) is used.
+  # Optional namespace override. Empty uses the Helm release namespace.
   namespaceOverride: ""
 
-# Number of toolbox pods
 replicaCount: 1
 
 image:
-  # Repository WITHOUT registry prefix (unless you want to hard-code full path here).
-  # For offline deployments, this will be combined with global.imageRegistry
-  # Examples:
-  #   - "ultimate-k8s-toolbox"
-  #   - "platform/ultimate-k8s-toolbox"
   repository: "ultimate-k8s-toolbox"
-  tag: "latest"
+  tag: "v1.1.0"
   pullPolicy: IfNotPresent
 
-# Image pull secrets for private registries
-# For offline environments, create a secret with registry credentials:
-#   kubectl create secret docker-registry regcred \
-#     --docker-server=myregistry.local:5000 \
-#     --docker-username=myuser \
-#     --docker-password=mypass \
-#     --docker-email=myemail@example.com
 imagePullSecrets: []
   # - name: regcred
 
@@ -48,144 +32,117 @@ nameOverride: ""
 fullnameOverride: ""
 
 serviceAccount:
-  # Specifies whether a service account should be created
   create: true
-  # If name is empty and create=true, a SA named after the release will be created.
-  # If you want to reuse an existing SA (e.g. mongodb-operator, admin-sa) set:
-  #   create: false
-  #   name: existing-sa-name
   name: ""
   annotations: {}
-  # Example annotations:
-  #   eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/my-role
 
 podAnnotations: {}
-  # Example:
-  #   prometheus.io/scrape: "true"
-  #   prometheus.io/port: "9090"
-
 podLabels: {}
-  # Example:
-  #   environment: production
-  #   team: platform
 
-# Resource limits and requests
 resources:
   requests:
-    cpu: "10m"
-    memory: "64Mi"
+    cpu: "50m"
+    memory: "256Mi"
   limits:
-    cpu: "500m"
-    memory: "512Mi"
+    cpu: "2"
+    memory: "2Gi"
 
-# Node selection
 nodeSelector: {}
-  # Example:
-  #   disktype: ssd
-  #   node-role.kubernetes.io/worker: "true"
-
-# Tolerations for node taints
 tolerations: []
-  # Example:
-  # - key: "key1"
-  #   operator: "Equal"
-  #   value: "value1"
-  #   effect: "NoSchedule"
-
-# Pod affinity/anti-affinity rules
 affinity: {}
-  # Example:
-  #   nodeAffinity:
-  #     requiredDuringSchedulingIgnoredDuringExecution:
-  #       nodeSelectorTerms:
-  #       - matchExpressions:
-  #         - key: kubernetes.io/hostname
-  #           operator: In
-  #           values:
-  #           - node1
-  #           - node2
 
-# Security context for the pod
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 10000
   fsGroup: 10000
 
-# Security context for the container
 securityContext:
   allowPrivilegeEscalation: false
   capabilities:
     drop:
       - ALL
     add:
-      - NET_ADMIN  # Required for network troubleshooting tools
-      - NET_RAW    # Required for ping and network diagnostics
+      # Required for ping, packet inspection, and network troubleshooting.
+      - NET_ADMIN
+      - NET_RAW
   readOnlyRootFilesystem: false
 
 container:
-  # Command/args are kept configurable so you can tweak startup logic if needed.
-  # NOTE: CA trust store is updated by the init container when customCA.enabled=true
   command: ["/bin/bash", "-c"]
   args:
     - |
       echo "==========================================";
-      echo "Ultimate Kubernetes Toolbox Pod Ready";
+      echo "Ultimate Kubernetes Toolbox v1.1.0 Ready";
       echo "==========================================";
-      echo "";
       echo "Pod Name: $HOSTNAME";
       echo "Namespace: ${POD_NAMESPACE:-default}";
       echo "";
-      echo "Available tools:";
-      echo "  - mongosh (MongoDB Shell)";
-      echo "  - kcadm.sh / kcreg.sh (Keycloak Admin CLIs)";
-      echo "  - kubectl (Kubernetes CLI)";
-      echo "  - tridentctl (NetApp Trident CLI)";
-      echo "  - Network tools (ping, curl, wget, netcat, nslookup, dig, traceroute)";
-      echo "  - And more...";
+      echo "Primary tool groups:";
+      echo "  - Kubernetes: kubectl, helm, yq, jq";
+      echo "  - Identity: kcadm.sh, kcreg.sh, kc.sh, keycloak-login.sh";
+      echo "  - PostgreSQL: psql, pg_isready, pg_dump, pg_restore, pgbench, pgcli, pg_activity, pgbadger, pg-diagnostics.sh";
+      echo "  - MongoDB: mongosh, mongodump, mongorestore, mongoexport, mongoimport, mongostat, mongotop";
+      echo "  - Storage: tridentctl, nfs-common, rsync, ssh";
+      echo "  - Network/TLS: curl, wget, dig, nslookup, nc, nmap, tcpdump, traceroute, mtr, iperf3, socat, openssl";
       echo "";
-      # Check if custom CA certificates are mounted and trusted
       if [ -d /etc/ssl/custom-ca ] && [ "$(ls -A /etc/ssl/custom-ca 2>/dev/null)" ]; then
-        echo "Custom CA certificates: LOADED and TRUSTED";
-        ls /etc/ssl/custom-ca/*.crt 2>/dev/null | xargs -I {} basename {} | sed 's/^/  - /';
-        echo "";
-        # Verify CA is in trust store
-        if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
-          echo "System trust store: Updated by init container";
-        fi
+        echo "Custom CA certificates: loaded";
+        ls /etc/ssl/custom-ca/*.crt 2>/dev/null | xargs -r -I {} basename {} | sed 's/^/  - /';
         echo "";
       fi
-      echo "To access this pod:";
-      echo "  kubectl -n ${POD_NAMESPACE:-default} exec -it $HOSTNAME -- bash";
-      echo "";
+      echo "Access: kubectl -n ${POD_NAMESPACE:-default} exec -it $HOSTNAME -- bash";
       echo "==========================================";
       tail -f /dev/null
 
-  # Environment variables
   env: []
-    # Example:
-    # - name: MONGODB_URI
-    #   value: "mongodb://mongodb.mongodb.svc.cluster.local:27017"
-    # - name: CUSTOM_VAR
+    # PostgreSQL diagnostic example. Prefer secrets for credentials.
+    # - name: PGHOST
+    #   value: "postgres.postgres.svc.cluster.local"
+    # - name: PGPORT
+    #   value: "5432"
+    # - name: PGDATABASE
+    #   value: "postgres"
+    # - name: PGUSER
     #   valueFrom:
     #     secretKeyRef:
-    #       name: my-secret
-    #       key: my-key
+    #       name: postgres-admin
+    #       key: username
+    # - name: PGPASSWORD
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: postgres-admin
+    #       key: password
+    # Keycloak helper example:
+    # - name: KEYCLOAK_URL
+    #   value: "https://keycloak.example.com"
+    # - name: KEYCLOAK_USER
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: keycloak-admin
+    #       key: username
+    # - name: KEYCLOAK_PASSWORD
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: keycloak-admin
+    #       key: password
 
-  # Volume mounts
   volumeMounts: []
-    # Example:
-    # - name: config
-    #   mountPath: /config
-    #   readOnly: true
 
-# Optional Keycloak CLI sidecar for environments where rebuilding the toolbox
-# image is not available. This container includes kcadm.sh/kcreg.sh/kc.sh.
+# Optional Keycloak CLI sidecar for environments where the main image cannot be rebuilt
+# or where identity operations should be logically separated from the primary toolbox shell.
 keycloakCli:
   enabled: false
   image:
     repository: "quay.io/keycloak/keycloak"
-    tag: "26.1.4"
+    tag: "26.6.3"
     pullPolicy: IfNotPresent
+    fullImageOverride: ""
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
   command:
     - /bin/sh
     - -c
@@ -195,17 +152,11 @@ keycloakCli:
       echo "Keycloak CLI Sidecar Ready";
       echo "==========================================";
       echo "Available tools: kcadm.sh, kcreg.sh, kc.sh";
-      echo "To access: kubectl -n ${POD_NAMESPACE:-default} exec -it $HOSTNAME -c keycloak-cli -- /bin/sh";
+      echo "Access: kubectl -n ${POD_NAMESPACE:-default} exec -it $HOSTNAME -c keycloak-cli -- /bin/sh";
       tail -f /dev/null
 
-# Volumes
 volumes: []
-  # Example:
-  # - name: config
-  #   configMap:
-  #     name: my-config
 
-# Liveness probe (optional)
 livenessProbe:
   enabled: false
   exec:
@@ -219,7 +170,6 @@ livenessProbe:
   successThreshold: 1
   failureThreshold: 3
 
-# Readiness probe (optional)
 readinessProbe:
   enabled: false
   exec:
@@ -233,75 +183,15 @@ readinessProbe:
   successThreshold: 1
   failureThreshold: 3
 
-# =============================================================================
 # Custom CA Certificate Configuration
-# =============================================================================
-# Industry best practice for CA trust integration in Kubernetes:
-# 1. Store CA certificates in a Kubernetes Secret
-# 2. Mount the secret as a volume in the pod
-# 3. Use an init container (running as root) to run update-ca-certificates
-# 4. Share the updated trust store with the main container via emptyDir volume
-#
-# This enables tools like curl, wget, openssl, Python requests, and mongosh
-# to trust your internal/enterprise CA certificates.
-#
-# How it works:
-#   - An init container runs as root (required for update-ca-certificates)
-#   - It copies CA certs to /usr/local/share/ca-certificates/custom/
-#   - Runs: update-ca-certificates --fresh --verbose
-#   - Copies the updated /etc/ssl/certs/ to a shared emptyDir volume
-#   - The main container mounts this shared volume at /etc/ssl/certs/
-#
-# Usage:
-#   1. Create a secret with your CA certificates:
-#      kubectl create secret generic toolbox-ca-certs \
-#        --from-file=root-ca.crt=/path/to/root-ca.crt \
-#        --from-file=subordinate-ca.crt=/path/to/sub-ca.crt \
-#        -n toolbox
-#
-#   2. Enable customCA in values:
-#      customCA:
-#        enabled: true
-#        secretName: toolbox-ca-certs
-#
-#   3. The toolbox pod will automatically trust these CAs on startup
-#
-# Verification (inside the pod):
-#   # Check if CA is trusted
-#   openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt your-cert.crt
-#   
-#   # Test HTTPS connection to internal service
-#   curl -v https://internal-service.example.com
-# =============================================================================
 customCA:
-  # Enable custom CA certificate mounting and trust
   enabled: false
-  
-  # Name of the Kubernetes Secret containing CA certificates
-  # The secret should contain .crt or .pem files
   secretName: "toolbox-ca-certs"
-  
-  # Mount path for CA certificates inside the container
-  # Certificates are mounted here, then copied to system trust store on startup
   mountPath: /etc/ssl/custom-ca
-  
-  # Optional: Create the secret from inline certificate data
-  # If false, you must create the secret manually before deployment
-  # If true, provide certificate content in 'certificates' below
   createSecret: false
-  
-  # Certificate data (only used if createSecret: true)
-  # Each entry creates a file in the secret
-  # certificates:
-  #   - name: root-ca.crt
-  #     content: |
-  #       -----BEGIN CERTIFICATE-----
-  #       MIIDxTCCAq2gAwIBAgIQAqxcJmoLQJuPC3nyrkYldzANBgkqhkiG9w0BAQUFADBs
-  #       ... (certificate content)
-  #       -----END CERTIFICATE-----
-  #   - name: subordinate-ca.crt
-  #     content: |
-  #       -----BEGIN CERTIFICATE-----
-  #       ... (certificate content)
-  #       -----END CERTIFICATE-----
   certificates: []
+    # - name: root-ca.crt
+    #   content: |
+    #     -----BEGIN CERTIFICATE-----
+    #     ...
+    #     -----END CERTIFICATE-----
