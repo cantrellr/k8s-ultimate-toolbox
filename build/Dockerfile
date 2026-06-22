@@ -1,103 +1,101 @@
-# syntax=docker/dockerfile:1.4
+# syntax=docker/dockerfile:1.7
 FROM ubuntu:24.04
 
-# Metadata
+ARG TOOLBOX_VERSION="1.1.0"
+ARG MONGOSH_VERSION="2.8.3"
+ARG MONGO_TOOLS_VERSION="100.17.0"
+ARG KUBECTL_VERSION="v1.36.1"
+ARG HELM_VERSION="v4.2.1"
+ARG YQ_VERSION="v4.53.3"
+ARG KEYCLOAK_VERSION="26.6.3"
+ARG TRIDENT_VERSION="26.02.0"
+
 LABEL maintainer="Platform Team"
-LABEL description="Swiss-army knife for Kubernetes, MongoDB, Ops Manager, networking, storage, and cluster inspection - True Admin Workstation"
-LABEL version="1.0.2"
+LABEL description="Kubernetes administration workstation for cluster, identity, database, networking, storage, and air-gapped diagnostics"
+LABEL version="${TOOLBOX_VERSION}"
 
-# Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH="/usr/local/bin:${PATH}"
+ENV DEBIAN_FRONTEND=noninteractive \
+    PATH="/usr/local/bin:/opt/keycloak/bin:${PATH}" \
+    KC_HOME="/opt/keycloak" \
+    PAGER="less"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # ============================================================================
-# SECTION 1: Base System + Core Utilities
+# Base OS utilities, network diagnostics, storage clients, and database tools
 # ============================================================================
-RUN apt-get update && apt-get install -y \
-    # Core utilities
-    curl \
-    wget \
-    ca-certificates \
-    gnupg \
-    lsb-release \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-transport-https \
-    software-properties-common \
-    # Text editors
-    vim \
-    nano \
-    # Version control
-    git \
-    # System monitoring and debugging
-    htop \
-    less \
-    psmisc \
-    strace \
-    procps \
-    lsof \
-    iotop \
-    file \
-    # Shell enhancements
     bash-completion \
-    && rm -rf /var/lib/apt/lists/*
-
-# ============================================================================
-# SECTION 2: X.509 / TLS / Certificate Tools
-# ============================================================================
-RUN apt-get update && apt-get install -y \
-    openssl \
-    gnutls-bin \
-    && rm -rf /var/lib/apt/lists/*
-
-# ============================================================================
-# SECTION 3: Networking Tools (Complete Debug Stack)
-# ============================================================================
-RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    default-mysql-client \
     dnsutils \
-    iputils-ping \
-    iproute2 \
-    netcat-openbsd \
-    tcpdump \
-    traceroute \
-    net-tools \
-    telnet \
-    nmap \
-    iperf3 \
-    && rm -rf /var/lib/apt/lists/*
-
-# ============================================================================
-# SECTION 4: Storage + File Transfer Tools
-# ============================================================================
-RUN apt-get update && apt-get install -y \
-    nfs-common \
-    zip \
-    unzip \
-    tar \
+    file \
+    gettext-base \
+    git \
+    gnupg \
+    gnutls-bin \
     gzip \
-    rsync \
+    htop \
+    iperf3 \
+    iproute2 \
+    iputils-ping \
+    iotop \
+    jq \
+    less \
+    libpq-dev \
+    lsb-release \
+    lsof \
+    mtr-tiny \
+    nano \
+    net-tools \
+    netcat-openbsd \
+    nfs-common \
+    nmap \
+    openjdk-21-jre-headless \
     openssh-client \
+    openssl \
+    pgbadger \
+    pgbouncer \
+    postgresql-client \
+    postgresql-client-common \
+    postgresql-contrib \
+    procps \
+    psmisc \
+    python3 \
+    python3-pip \
+    python3-venv \
+    redis-tools \
+    rsync \
+    socat \
+    software-properties-common \
+    strace \
+    tar \
+    tcpdump \
+    telnet \
+    traceroute \
+    unzip \
+    vim \
+    wget \
+    whois \
+    zip \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================================
-# SECTION 5: MongoDB Client Stack (Complete Suite)
+# MongoDB client stack
 # ============================================================================
+RUN ARCH="$(dpkg --print-architecture)" && \
+    wget -q "https://downloads.mongodb.com/compass/mongodb-mongosh_${MONGOSH_VERSION}_${ARCH}.deb" && \
+    dpkg -i "mongodb-mongosh_${MONGOSH_VERSION}_${ARCH}.deb" || apt-get install -f -y && \
+    rm -f "mongodb-mongosh_${MONGOSH_VERSION}_${ARCH}.deb"
 
-# Install MongoDB Shell (mongosh)
-RUN MONGOSH_VERSION="2.3.7" && \
-    ARCH=$(dpkg --print-architecture) && \
-    wget -q https://downloads.mongodb.com/compass/mongodb-mongosh_${MONGOSH_VERSION}_${ARCH}.deb && \
-    dpkg -i mongodb-mongosh_${MONGOSH_VERSION}_${ARCH}.deb || apt-get install -f -y && \
-    rm mongodb-mongosh_${MONGOSH_VERSION}_${ARCH}.deb
-
-# Install MongoDB Database Tools (mongodump, mongorestore, bsondump, mongostat, etc.)
-RUN MONGO_TOOLS_VERSION="100.13.0" && \
-    ARCH=$(dpkg --print-architecture) && \
-    if [ "$ARCH" = "amd64" ]; then \
-        MONGO_ARCH="x86_64"; \
-    elif [ "$ARCH" = "arm64" ]; then \
-        MONGO_ARCH="arm64"; \
-    else \
-        echo "Unsupported architecture: $ARCH" && exit 1; \
-    fi && \
+RUN ARCH="$(dpkg --print-architecture)" && \
+    case "$ARCH" in \
+      amd64) MONGO_ARCH="x86_64" ;; \
+      arm64) MONGO_ARCH="arm64" ;; \
+      *) echo "Unsupported architecture: $ARCH" && exit 1 ;; \
+    esac && \
     TOOLS_TGZ="mongodb-database-tools-ubuntu2404-${MONGO_ARCH}-${MONGO_TOOLS_VERSION}.tgz" && \
     wget -q "https://fastdl.mongodb.org/tools/db/${TOOLS_TGZ}" && \
     mkdir -p /tmp/mongo-tools && \
@@ -106,48 +104,31 @@ RUN MONGO_TOOLS_VERSION="100.13.0" && \
     chmod +x /usr/local/bin/mongo* /usr/local/bin/bsondump /usr/local/bin/mongostat /usr/local/bin/mongotop || true && \
     rm -rf /tmp/mongo-tools "${TOOLS_TGZ}"
 
-# Verify MongoDB tools installation
-RUN mongosh --version && \
-    mongodump --version && \
-    mongorestore --version && \
-    echo "MongoDB client stack installed successfully"
-
 # ============================================================================
-# SECTION 6: Kubernetes Admin Tooling
+# Kubernetes, Helm, YAML, Keycloak, and Trident CLIs
 # ============================================================================
+RUN ARCH="$(dpkg --print-architecture)" && \
+    curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl" && \
+    chmod +x /usr/local/bin/kubectl
 
-# Install kubectl
-RUN KUBECTL_VERSION="v1.31.4" && \
-    ARCH=$(dpkg --print-architecture) && \
-    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl" && \
-    chmod +x kubectl && \
-    mv kubectl /usr/local/bin/
+RUN ARCH="$(dpkg --print-architecture)" && \
+    case "$ARCH" in \
+      amd64) HELM_ARCH="amd64" ;; \
+      arm64) HELM_ARCH="arm64" ;; \
+      armhf) HELM_ARCH="arm" ;; \
+      *) echo "Unsupported architecture for Helm: $ARCH" && exit 1 ;; \
+    esac && \
+    curl -fsSLo /tmp/helm.tgz "https://get.helm.sh/helm-${HELM_VERSION}-linux-${HELM_ARCH}.tar.gz" && \
+    tar -xzf /tmp/helm.tgz -C /tmp && \
+    mv "/tmp/linux-${HELM_ARCH}/helm" /usr/local/bin/helm && \
+    chmod +x /usr/local/bin/helm && \
+    rm -rf /tmp/helm.tgz "/tmp/linux-${HELM_ARCH}"
 
-# Install Helm
-RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-# Install jq (JSON processor) - already in base but ensuring it's here
-RUN apt-get update && apt-get install -y jq && rm -rf /var/lib/apt/lists/*
-
-# Install yq (YAML processor)
-RUN YQ_VERSION="v4.45.1" && \
-    ARCH=$(dpkg --print-architecture) && \
-    wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${ARCH} && \
+RUN ARCH="$(dpkg --print-architecture)" && \
+    wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${ARCH}" && \
     chmod +x /usr/local/bin/yq
 
-# Install envsubst (part of gettext-base)
-RUN apt-get update && apt-get install -y gettext-base && rm -rf /var/lib/apt/lists/*
-
-# ============================================================================
-# SECTION 7: Identity & Access Management Tools (Keycloak CLI)
-# ============================================================================
-
-# Install Java runtime required by Keycloak CLI scripts
-RUN apt-get update && apt-get install -y openjdk-21-jre-headless && rm -rf /var/lib/apt/lists/*
-
-# Install Keycloak admin and registration CLIs
-RUN KEYCLOAK_VERSION="26.1.4" && \
-    wget -q "https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.tar.gz" && \
+RUN wget -q "https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.tar.gz" && \
     tar -xzf "keycloak-${KEYCLOAK_VERSION}.tar.gz" -C /opt && \
     mv "/opt/keycloak-${KEYCLOAK_VERSION}" /opt/keycloak && \
     ln -sf /opt/keycloak/bin/kcadm.sh /usr/local/bin/kcadm.sh && \
@@ -156,316 +137,250 @@ RUN KEYCLOAK_VERSION="26.1.4" && \
     chmod +x /opt/keycloak/bin/*.sh && \
     rm -f "keycloak-${KEYCLOAK_VERSION}.tar.gz"
 
-# Verify Keycloak CLI installation
-RUN kcadm.sh --help >/dev/null && \
-    kcreg.sh --help >/dev/null && \
-    kc.sh --help >/dev/null && \
-    java -version && \
-    echo "Keycloak CLI tools installed successfully"
-
-# ============================================================================
-# SECTION 8: Storage Tools (Trident + NFS)
-# ============================================================================
-
-# Install tridentctl (NetApp Trident CLI)
-RUN TRIDENT_VERSION="24.10.0" && \
-    wget https://github.com/NetApp/trident/releases/download/v${TRIDENT_VERSION}/trident-installer-${TRIDENT_VERSION}.tar.gz && \
-    tar -xzf trident-installer-${TRIDENT_VERSION}.tar.gz && \
+RUN wget -q "https://github.com/NetApp/trident/releases/download/v${TRIDENT_VERSION}/trident-installer-${TRIDENT_VERSION}.tar.gz" && \
+    tar -xzf "trident-installer-${TRIDENT_VERSION}.tar.gz" && \
     cp trident-installer/tridentctl /usr/local/bin/ && \
     chmod +x /usr/local/bin/tridentctl && \
-    rm -rf trident-installer-${TRIDENT_VERSION}.tar.gz trident-installer
+    rm -rf "trident-installer-${TRIDENT_VERSION}.tar.gz" trident-installer
 
 # ============================================================================
-# SECTION 9: Python Environment (Scripting + Automation)
+# Python automation and PostgreSQL diagnostic UX
 # ============================================================================
-
-# Install Python
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install essential Python packages
 RUN pip3 install --no-cache-dir --break-system-packages \
-    pymongo \
+    click \
+    jinja2 \
     kubernetes \
+    pg_activity \
+    pgcli \
+    psycopg[binary] \
+    pymongo \
     pyyaml \
     requests \
-    jinja2 \
-    click
+    sqlalchemy
 
-# Verify Python installation
-RUN python3 --version && pip3 --version
-
-# ============================================================================
-# SECTION 10: CA Trust Integration (Enterprise Best Practice)
-# ============================================================================
-# Industry best practice for CA trust integration:
-# 1. Mount certificates as Kubernetes Secret/ConfigMap volume
-# 2. Copy to /usr/local/share/ca-certificates/ on container startup
-# 3. Run update-ca-certificates to update system trust store
-# 4. All tools (curl, wget, openssl, Python, mongosh) will trust custom CAs
-
-# Create directory for custom CA certificates
-RUN mkdir -p /usr/local/share/ca-certificates/custom
-
-# Add comprehensive CA trust update script
-# This script handles multiple certificate sources and formats
-RUN cat > /usr/local/bin/update-ca-trust.sh <<'CATRUSTSCRIPT'
+RUN cat > /usr/local/bin/pg-diagnostics.sh <<'PGDIAGS'
 #!/bin/bash
-# =============================================================================
-# CA Trust Update Script for Ultimate K8s Toolbox
-# =============================================================================
-# This script updates the system CA trust store with custom certificates.
-# It supports multiple certificate sources and is designed to be idempotent.
-#
-# Sources checked (in order):
-#   1. /etc/ssl/custom-ca/ - Primary mount point for Kubernetes secrets
-#   2. /tls/ca.crt - Legacy single certificate mount
-#   3. CA_CERT_DIR environment variable - Custom directory
-#
-# Usage:
-#   update-ca-trust.sh              # Auto-detect and install CAs
-#   update-ca-trust.sh --verify     # Verify CA installation
-#   update-ca-trust.sh --list       # List installed custom CAs
-# =============================================================================
+set -euo pipefail
 
-# Configuration
+usage() {
+  cat <<'EOF'
+PostgreSQL diagnostic helper
+
+Connection options are read from standard libpq environment variables:
+  PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, PGSSLMODE
+
+Examples:
+  export PGHOST=postgres.postgres.svc.cluster.local
+  export PGPORT=5432
+  export PGDATABASE=postgres
+  export PGUSER=postgres
+  export PGPASSWORD='<secret>'
+  pg-diagnostics.sh
+
+  DATABASE_URL='postgresql://user:pass@host:5432/db?sslmode=require' pg-diagnostics.sh
+
+The script intentionally never prints PGPASSWORD or DATABASE_URL.
+EOF
+}
+
+run_sql() {
+  local title="$1"
+  local sql="$2"
+  echo ""
+  echo "## ${title}"
+  echo "--------------------------------------------------------------------------------"
+  psql ${DATABASE_URL:+"$DATABASE_URL"} -v ON_ERROR_STOP=0 -P pager=off -x -c "$sql" 2>/dev/null || echo "Skipped or failed: insufficient permissions, missing extension, or connection issue."
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ -z "${DATABASE_URL:-}" && -z "${PGHOST:-}" ]]; then
+  echo "PostgreSQL diagnostics are installed, but no target database was provided."
+  echo "Set PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD or DATABASE_URL, then rerun."
+  echo ""
+  echo "Installed PostgreSQL tools:"
+  psql --version || true
+  pg_isready --version || true
+  pg_dump --version || true
+  pg_restore --version || true
+  pgbench --version || true
+  command -v pgbadger >/dev/null && pgbadger --version || true
+  command -v pg_activity >/dev/null && pg_activity --version || true
+  command -v pgcli >/dev/null && pgcli --version || true
+  exit 0
+fi
+
+echo "PostgreSQL diagnostic summary"
+echo "Target: ${PGHOST:-DATABASE_URL}:${PGPORT:-5432}/${PGDATABASE:-default}"
+echo "User: ${PGUSER:-from-connection-string}"
+echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo ""
+echo "Connectivity:"
+pg_isready -h "${PGHOST:-localhost}" -p "${PGPORT:-5432}" -d "${PGDATABASE:-postgres}" -U "${PGUSER:-postgres}" || true
+
+run_sql "Server and connection identity" "select version() as version, current_database() as database, current_user as user, inet_server_addr() as server_addr, inet_server_port() as server_port;"
+run_sql "Database size summary" "select datname, pg_size_pretty(pg_database_size(datname)) as size from pg_database order by pg_database_size(datname) desc limit 20;"
+run_sql "Connection state counts" "select state, count(*) from pg_stat_activity group by state order by count(*) desc;"
+run_sql "Long running queries" "select pid, usename, state, now() - query_start as age, wait_event_type, wait_event, left(query, 240) as query from pg_stat_activity where state <> 'idle' order by age desc limit 15;"
+run_sql "Blocking locks" "select blocked_locks.pid as blocked_pid, blocked_activity.usename as blocked_user, blocking_locks.pid as blocking_pid, blocking_activity.usename as blocking_user, left(blocked_activity.query, 160) as blocked_statement, left(blocking_activity.query, 160) as blocking_statement from pg_catalog.pg_locks blocked_locks join pg_catalog.pg_stat_activity blocked_activity on blocked_activity.pid = blocked_locks.pid join pg_catalog.pg_locks blocking_locks on blocking_locks.locktype = blocked_locks.locktype and blocking_locks.database is not distinct from blocked_locks.database and blocking_locks.relation is not distinct from blocked_locks.relation and blocking_locks.page is not distinct from blocked_locks.page and blocking_locks.tuple is not distinct from blocked_locks.tuple and blocking_locks.virtualxid is not distinct from blocked_locks.virtualxid and blocking_locks.transactionid is not distinct from blocked_locks.transactionid and blocking_locks.classid is not distinct from blocked_locks.classid and blocking_locks.objid is not distinct from blocked_locks.objid and blocking_locks.objsubid is not distinct from blocked_locks.objsubid and blocking_locks.pid != blocked_locks.pid join pg_catalog.pg_stat_activity blocking_activity on blocking_activity.pid = blocking_locks.pid where not blocked_locks.granted;"
+run_sql "Replication senders" "select pid, usename, application_name, client_addr, state, sync_state, write_lag, flush_lag, replay_lag from pg_stat_replication;"
+run_sql "Database statistics" "select datname, numbackends, xact_commit, xact_rollback, blks_read, blks_hit, tup_returned, tup_fetched, tup_inserted, tup_updated, tup_deleted, deadlocks from pg_stat_database order by datname;"
+
+echo ""
+echo "Diagnostics complete. For log analysis, copy PostgreSQL logs into /workspace and run: pgBadger <logfile> -o /workspace/postgres-report.html"
+PGDIAGS
+RUN chmod +x /usr/local/bin/pg-diagnostics.sh
+
+RUN cat > /usr/local/bin/keycloak-login.sh <<'KCLOGIN'
+#!/bin/bash
+set -euo pipefail
+
+: "${KEYCLOAK_URL:?Set KEYCLOAK_URL, for example https://keycloak.example.com}"
+: "${KEYCLOAK_USER:?Set KEYCLOAK_USER}"
+: "${KEYCLOAK_PASSWORD:?Set KEYCLOAK_PASSWORD}"
+KEYCLOAK_REALM="${KEYCLOAK_REALM:-master}"
+KEYCLOAK_CLIENT="${KEYCLOAK_CLIENT:-admin-cli}"
+
+kcadm.sh config credentials \
+  --server "$KEYCLOAK_URL" \
+  --realm "$KEYCLOAK_REALM" \
+  --client "$KEYCLOAK_CLIENT" \
+  --user "$KEYCLOAK_USER" \
+  --password "$KEYCLOAK_PASSWORD"
+
+echo "Authenticated to ${KEYCLOAK_URL} realm ${KEYCLOAK_REALM}."
+kcadm.sh get realms --fields realm,enabled | head -40
+KCLOGIN
+RUN chmod +x /usr/local/bin/keycloak-login.sh
+
+RUN cat > /usr/local/bin/update-ca-trust.sh <<'CATRUST'
+#!/bin/bash
+set -euo pipefail
 CA_TARGET_DIR="/usr/local/share/ca-certificates/custom"
 PRIMARY_CA_SOURCE="${CA_CERT_DIR:-/etc/ssl/custom-ca}"
 LEGACY_CA_PATH="/tls/ca.crt"
-VERBOSE=${VERBOSE:-false}
+mkdir -p "$CA_TARGET_DIR"
 
-log_info() {
-    echo "[CA-TRUST] $1"
-}
+case "${1:-}" in
+  --list|--verify)
+    echo "Custom CA certificates in ${CA_TARGET_DIR}:"
+    find "$CA_TARGET_DIR" -maxdepth 1 -type f -name '*.crt' -print -exec openssl x509 -in {} -noout -subject -issuer -dates \; 2>/dev/null || true
+    exit 0
+    ;;
+  --help|-h)
+    echo "Usage: update-ca-trust.sh [--list|--verify]"
+    exit 0
+    ;;
+esac
 
-log_debug() {
-    if [ "$VERBOSE" = true ]; then
-        echo "[CA-TRUST] DEBUG: $1"
-    fi
-}
-
-# Install certificates from a directory
-install_certs_from_dir() {
-    local source_dir="$1"
-    local installed=0
-    
-    if [ ! -d "$source_dir" ]; then
-        log_debug "Directory not found: $source_dir"
-        return 0
-    fi
-    
-    # Process all .crt and .pem files
-    for cert in "$source_dir"/*.crt "$source_dir"/*.pem; do
-        if [ -f "$cert" ]; then
-            local cert_name
-            cert_name=$(basename "$cert")
-            
-            # Validate its a valid certificate
-            if openssl x509 -in "$cert" -noout 2>/dev/null; then
-                # Copy with .crt extension (required by update-ca-certificates)
-                local target_name="${cert_name%.*}.crt"
-                cp "$cert" "$CA_TARGET_DIR/$target_name"
-                log_info "Installed: $cert_name"
-                ((installed++))
-            else
-                log_debug "Skipping invalid certificate: $cert_name"
-            fi
-        fi
+for source in "$PRIMARY_CA_SOURCE"; do
+  if [[ -d "$source" ]]; then
+    for cert in "$source"/*.crt "$source"/*.pem; do
+      [[ -f "$cert" ]] || continue
+      if openssl x509 -in "$cert" -noout >/dev/null 2>&1; then
+        cp "$cert" "$CA_TARGET_DIR/$(basename "${cert%.*}").crt"
+        echo "Installed CA: $(basename "$cert")"
+      fi
     done
-    
-    return $installed
-}
+  fi
+done
 
-# Install single certificate file
-install_single_cert() {
-    local cert_path="$1"
-    local cert_name="$2"
-    
-    if [ ! -f "$cert_path" ]; then
-        log_debug "Certificate not found: $cert_path"
-        return 1
-    fi
-    
-    if openssl x509 -in "$cert_path" -noout 2>/dev/null; then
-        cp "$cert_path" "$CA_TARGET_DIR/${cert_name}.crt"
-        log_info "Installed: $cert_name from $cert_path"
-        return 0
-    else
-        log_debug "Invalid certificate: $cert_path"
-        return 1
-    fi
-}
+if [[ -f "$LEGACY_CA_PATH" ]] && openssl x509 -in "$LEGACY_CA_PATH" -noout >/dev/null 2>&1; then
+  cp "$LEGACY_CA_PATH" "$CA_TARGET_DIR/legacy-ca.crt"
+  echo "Installed CA: legacy-ca.crt"
+fi
 
-# Verify CA installation
-verify_installation() {
-    echo "Custom CA Certificates:"
-    echo "========================"
-    
-    local count=0
-    for cert in "$CA_TARGET_DIR"/*.crt; do
-        if [ -f "$cert" ]; then
-            local subject
-            subject=$(openssl x509 -in "$cert" -noout -subject 2>/dev/null | sed 's/subject=//')
-            echo "  $(basename "$cert"): $subject"
-            ((count++))
-        fi
-    done
-    
-    if [ $count -eq 0 ]; then
-        echo "  (none installed)"
-    fi
-    
-    echo ""
-    echo "System trust store: /etc/ssl/certs/ca-certificates.crt"
-    echo "Custom CAs trusted: $count"
-}
-
-# List installed certificates
-list_certificates() {
-    echo "Installed Custom CA Certificates:"
-    echo "=================================="
-    
-    for cert in "$CA_TARGET_DIR"/*.crt; do
-        if [ -f "$cert" ]; then
-            echo ""
-            echo "File: $(basename "$cert")"
-            openssl x509 -in "$cert" -noout -subject -issuer -dates 2>/dev/null | sed 's/^/  /'
-        fi
-    done
-}
-
-# Main function
-main() {
-    case "${1:-}" in
-        --verify)
-            verify_installation
-            exit 0
-            ;;
-        --list)
-            list_certificates
-            exit 0
-            ;;
-        --help)
-            head -20 "$0" | tail -15 | sed 's/^# //'
-            exit 0
-            ;;
-    esac
-    
-    log_info "Updating CA trust store..."
-    
-    # Ensure target directory exists
-    mkdir -p "$CA_TARGET_DIR"
-    
-    local certs_installed=0
-    
-    # Source 1: Primary mount directory (Kubernetes secret/configmap)
-    if [ -d "$PRIMARY_CA_SOURCE" ]; then
-        log_debug "Checking primary source: $PRIMARY_CA_SOURCE"
-        install_certs_from_dir "$PRIMARY_CA_SOURCE" || true
-        certs_installed=$((certs_installed + $?))
-    fi
-    
-    # Source 2: Legacy single certificate path
-    if [ -f "$LEGACY_CA_PATH" ]; then
-        log_debug "Checking legacy path: $LEGACY_CA_PATH"
-        if install_single_cert "$LEGACY_CA_PATH" "legacy-ca"; then
-            ((certs_installed++))
-        fi
-    fi
-    
-    # Source 3: Environment variable custom directory
-    if [ -n "${CA_CERT_DIR:-}" ] && [ "$CA_CERT_DIR" != "$PRIMARY_CA_SOURCE" ]; then
-        log_debug "Checking custom directory: $CA_CERT_DIR"
-        install_certs_from_dir "$CA_CERT_DIR" || true
-    fi
-    
-    # Update system trust store if any certificates were installed
-    if [ "$(ls -A "$CA_TARGET_DIR" 2>/dev/null)" ]; then
-        log_info "Running update-ca-certificates..."
-        update-ca-certificates --fresh > /dev/null 2>&1 || update-ca-certificates > /dev/null 2>&1
-        log_info "CA trust store updated successfully"
-        
-        # Show summary
-        local count
-        count=$(find "$CA_TARGET_DIR" -name "*.crt" -type f 2>/dev/null | wc -l)
-        log_info "Total custom CAs installed: $count"
-    else
-        log_info "No custom CA certificates found"
-    fi
-}
-
-main "$@"
-CATRUSTSCRIPT
+update-ca-certificates --fresh >/dev/null 2>&1 || update-ca-certificates >/dev/null 2>&1
+echo "CA trust store refreshed."
+CATRUST
 RUN chmod +x /usr/local/bin/update-ca-trust.sh
 
-# ============================================================================
-# SECTION 11: User Setup + Workspace Configuration
-# ============================================================================
+RUN cat > /usr/local/bin/show-versions.sh <<'VERSIONS'
+#!/bin/bash
+set +e
+cat <<'EOF'
+==============================================
+  Ultimate K8s Toolbox v1.1.0
+  Cluster, identity, database, network, and storage diagnostics
+==============================================
+EOF
 
-# Create a non-root user (use uid 10000 to avoid conflicts)
+echo ""
+echo "☸️  Kubernetes / GitOps"
+kubectl version --client=true 2>/dev/null | head -1 || echo "  kubectl: installed"
+helm version --short 2>/dev/null || true
+yq --version 2>/dev/null || true
+jq --version 2>/dev/null || true
+
+echo ""
+echo "🔐 Keycloak"
+kcadm.sh --help >/dev/null 2>&1 && echo "  kcadm.sh: ready" || echo "  kcadm.sh: missing"
+kcreg.sh --help >/dev/null 2>&1 && echo "  kcreg.sh: ready" || echo "  kcreg.sh: missing"
+kc.sh --help >/dev/null 2>&1 && echo "  kc.sh: ready" || echo "  kc.sh: missing"
+java -version 2>&1 | head -1
+
+echo ""
+echo "🐘 PostgreSQL"
+psql --version 2>/dev/null || true
+pg_isready --version 2>/dev/null || true
+pg_dump --version 2>/dev/null || true
+pg_restore --version 2>/dev/null || true
+pgbench --version 2>/dev/null || true
+command -v pg_activity >/dev/null && pg_activity --version 2>/dev/null || true
+command -v pgcli >/dev/null && pgcli --version 2>/dev/null || true
+
+echo ""
+echo "🍃 MongoDB"
+mongosh --version 2>/dev/null | head -1 || true
+mongodump --version 2>/dev/null | grep version || true
+mongorestore --version 2>/dev/null | grep version || true
+
+echo ""
+echo "🌐 Network / TLS"
+echo "  curl, wget, dig, nslookup, nc, nmap, tcpdump, traceroute, mtr, iperf3, socat, openssl"
+openssl version 2>/dev/null || true
+
+echo ""
+echo "💾 Storage"
+tridentctl version --client 2>/dev/null || echo "  tridentctl: installed"
+echo "  nfs-common, rsync, ssh, tar, zip/unzip"
+
+echo ""
+echo "🛠️  System / scripting"
+python3 --version 2>/dev/null || true
+echo "  git, vim, nano, htop, less, strace, lsof, jq, yq, tmux-ready shell UX"
+echo ""
+echo "Operational helpers: pg-diagnostics.sh, keycloak-login.sh, update-ca-trust.sh"
+echo "Ready."
+VERSIONS
+RUN chmod +x /usr/local/bin/show-versions.sh
+
+# ============================================================================
+# Verification during image build
+# ============================================================================
+RUN kubectl version --client=true >/dev/null 2>&1 && \
+    helm version --short >/dev/null && \
+    yq --version >/dev/null && \
+    kcadm.sh --help >/dev/null && \
+    psql --version >/dev/null && \
+    pg_isready --version >/dev/null && \
+    pg-diagnostics.sh --help >/dev/null && \
+    mongosh --version >/dev/null && \
+    mongodump --version >/dev/null && \
+    tridentctl version --client >/dev/null 2>&1 && \
+    python3 --version >/dev/null
+
+# ============================================================================
+# Non-root runtime user
+# ============================================================================
 RUN useradd -m -s /bin/bash -u 10000 toolbox && \
-    mkdir -p /home/toolbox/.kube /home/toolbox/scripts && \
-    chown -R toolbox:toolbox /home/toolbox
+    mkdir -p /home/toolbox/.kube /home/toolbox/scripts /workspace && \
+    chown -R toolbox:toolbox /home/toolbox /workspace
 
-# Set up workspace
 WORKDIR /workspace
-RUN chown toolbox:toolbox /workspace
-
-# Create comprehensive tool verification script
-RUN echo '#!/bin/bash' > /usr/local/bin/show-versions.sh && \
-    echo 'echo "=============================================="' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  🚀 Ultimate K8s Admin Workstation 🚀"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  Swiss-army knife for K8s & MongoDB Ops"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "=============================================="' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo ""' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "📦 MONGODB CLIENT STACK:"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • mongosh: $(mongosh --version | head -1 | awk \"{print \\$2}\")"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • mongodump: $(mongodump --version | grep version | awk \"{print \\$3}\")"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • mongorestore: $(mongorestore --version | grep version | awk \"{print \\$3}\")"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo ""' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "☸️  KUBERNETES ADMIN TOOLS:"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • kubectl: $(kubectl version --client --short 2>/dev/null | grep Client | awk \"{print \\$3}\" || echo \"ready\")"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • helm: $(helm version --short | cut -d+ -f1)"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • jq: $(jq --version)"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • yq: $(yq --version | awk \"{print \\$3}\")"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo ""' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "🔐 KEYCLOAK CLI TOOLS:"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • kcadm.sh: $(kcadm.sh --help >/dev/null 2>&1 && echo ready || echo missing)"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • kcreg.sh: $(kcreg.sh --help >/dev/null 2>&1 && echo ready || echo missing)"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • kc.sh: $(kc.sh --help >/dev/null 2>&1 && echo ready || echo missing)"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • Java: $(java -version 2>&1 | head -1)"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo ""' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "🔒 TLS / X.509 TOOLS:"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • openssl: $(openssl version | awk \"{print \\$2}\")"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • gnutls: $(certtool --version | head -1 | awk \"{print \\$2}\")"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo ""' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "🌐 NETWORKING TOOLS:"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • dig, nslookup, ping, traceroute"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • tcpdump, netcat, nmap, curl, wget"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo ""' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "💾 STORAGE TOOLS:"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • tridentctl: $(tridentctl version --client 2>/dev/null | grep Version | awk \"{print \\$2}\" || echo \"ready\")"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • nfs-common, rsync, git"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo ""' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "🐍 PYTHON ENVIRONMENT:"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • Python: $(python3 --version | awk \"{print \\$2}\")"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • Packages: pymongo, kubernetes, pyyaml, requests"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo ""' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "🛠️  SYSTEM TOOLS:"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • vim, nano, htop, less, strace, lsof"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  • bash-completion enabled"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo ""' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "=============================================="' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "  Ready for cluster ops! 🎯"' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo "=============================================="' >> /usr/local/bin/show-versions.sh && \
-    echo 'echo ""' >> /usr/local/bin/show-versions.sh && \
-    chmod +x /usr/local/bin/show-versions.sh
-
-# Switch to non-root user
 USER toolbox
 
-# Set default command
 CMD ["/bin/bash", "-c", "show-versions.sh && tail -f /dev/null"]
