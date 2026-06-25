@@ -1,56 +1,61 @@
 #!/usr/bin/env bash
-# setup-ufw-zones-v6.sh
+# setup-ufw-zones-v7.sh
 #
 # Purpose:
 #   Configure UFW as interface-scoped firewall "zones" on a multi-NIC Ubuntu/Debian host.
-#   Includes Docker/Harbor-aware forwarding and optional Kubernetes/RKE2 port profiles on selected NICs.
+#   Uses zone + workload profiles so an operator can apply the right exposure model to each NIC.
 #
 # Zones:
-#   domain_zone:     SSH, HTTP, HTTPS inbound; optional AD/DC/Samba domain-service inbound profile
-#   storage_zone:    NFS/iSCSI inbound only
-#   restricted_zone: HTTPS inbound only
+#   domain_zone:     trusted/admin LAN; SSH and optional HTTP/HTTPS/domain-service ingress.
+#   storage_zone:    backend storage LAN; NFS/iSCSI only from explicit storage peers.
+#   restricted_zone: service/DMZ-facing LAN; only declared ingress/VIP ports.
 #
-# Security posture:
-#   - Default deny inbound
-#   - Default allow outbound
-#   - Default deny routed/forwarded traffic through UFW
-#   - Explicit deny routed traffic between assigned physical zone interfaces
-#   - Docker/Harbor forwarding is interface-specific: domain_zone, restricted_zone, or both
-#   - Kubernetes/RKE2 rules are interface-specific and source-CIDR aware
-#   - IPv4 forwarding is enabled only when Docker/Harbor or Kubernetes support requires it
-#   - Persistent DOCKER-USER guard blocks storage/non-selected zones from Docker container CIDRs
-#   - Basic anti-spoofing and redirect/source-route hardening
-#   - Full script action logging to /var/log/ufw-zone-setup
+# Workload profiles:
+#   RKE2-Server       multi-node RKE2 server/controller/etcd node
+#   RKE2-Agent        multi-node RKE2 agent/worker node
+#   RKE2-SingleNode   single-node RKE2 cluster; no Istio overlay prompt by default
+#   Harbor-Docker     Harbor or other Docker-published HTTPS service
+#   Custom-Ingress    explicit TCP/UDP ingress ports to node IPs and/or Kubernetes VIPs
 #
 # Notes:
 #   UFW does not implement native zones like firewalld. This script emulates zones using
-#   interface-scoped rules: "allow in on <interface> proto tcp from any to any port <port>".
+#   interface-scoped rules: "allow in on <interface> proto <proto> from <source> to <destination> port <port>".
 #
-# Docker/Harbor note:
-#   Harbor commonly publishes host TCP/443 and DNATs it to a container port such as TCP/8443.
-#   That traffic uses the Linux FORWARD path after Docker DNAT, not only normal local INPUT.
+# Kubernetes ingress VIP note:
+#   In this script, "Kubernetes ingress VIP" means the destination IP/CIDR used by a Kubernetes Service,
+#   LoadBalancer implementation, MetalLB pool, Gateway, or similar virtual IP. This is different from
+#   the client/source CIDR that is allowed to reach it.
 #
-# Kubernetes/RKE2 note:
-#   Kubernetes networking is iptables/nftables heavy. Keep Kubernetes rules restricted to node/admin CIDRs.
-#   Never expose etcd, kubelet, VXLAN/WireGuard, or CNI health ports to the Internet.
+# Istio note:
+#   Istio ports are offered only as an optional overlay when RKE2-Server or RKE2-Agent is selected.
+#   For a single-node cluster, Istio is not needed for node-to-node service-mesh plumbing and is not
+#   offered by default. Use Custom-Ingress if you intentionally expose an Istio Gateway VIP/port.
 #
 # Tested syntax target: Bash 4+, UFW 0.36+
 
 set -euo pipefail
 
-SCRIPT_VERSION="2026-06-25-v6-docker-kubernetes-interface-rules-logging"
+SCRIPT_VERSION="2026-06-25-v7-profile-vip-istio"
 BACKUP_ROOT="/root/ufw-zone-backups"
 LOG_ROOT="/var/log/ufw-zone-setup"
 SYSCTL_DROPIN="/etc/sysctl.d/99-ufw-zone-hardening.conf"
 DOCKER_GUARD_SCRIPT="/usr/local/sbin/ufw-zone-docker-guard.sh"
 DOCKER_GUARD_ENV="/etc/default/ufw-zone-docker-guard"
 DOCKER_GUARD_SERVICE="/etc/systemd/system/ufw-zone-docker-guard.service"
+
 DETECTED_IFACES=()
+ASSIGNED_IFACES=()
+DOMAIN_IFACES=()
+STORAGE_IFACES=()
+RESTRICTED_IFACES=()
+K8S_IFACES=()
+HARBOR_IFACES=()
+CUSTOM_INGRESS_IFACES=()
+
 LOG_FILE=""
 
-DOMAIN_IFACES_GLOBAL=()
-STORAGE_IFACES_GLOBAL=()
-RESTRICTED_IFACES_GLOBAL=()
+declare -A IFACE_ZONE=()
+declare -A IFACE_PROFILES=()
 
 need_root() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -66,10 +71,9 @@ init_logging() {
   touch "$LOG_FILE"
   chmod 640 "$LOG_FILE"
 
-  # Capture all stdout/stderr from this point forward on-screen and on-machine.
   exec > >(tee -a "$LOG_FILE") 2>&1
 
-  echo "=== UFW Zone Setup Action Log ==="
+  echo "=== UFW Zone/Profile Setup Action Log ==="
   echo "Version: $SCRIPT_VERSION"
   echo "Date: $(date -Is)"
   echo "Host: $(hostname -f 2>/dev/null || hostname)"
@@ -136,9 +140,25 @@ array_contains() {
   return 1
 }
 
+append_unique() {
+  local arr_name="$1"
+  local value="$2"
+  [[ -z "$value" ]] && return 0
+  eval "local current=(\"\${${arr_name}[@]:-}\")"
+  if ! array_contains "$value" "${current[@]}"; then
+    eval "${arr_name}+=(\"\$value\")"
+  fi
+}
+
 join_by_space() {
   local IFS=' '
   echo "$*"
+}
+
+normalize_list() {
+  local input="$1"
+  input="${input//,/ }"
+  echo "$input"
 }
 
 list_interfaces() {
@@ -153,8 +173,7 @@ discover_interfaces() {
   mapfile -t DETECTED_IFACES < <(list_interfaces)
 
   if [[ "${#DETECTED_IFACES[@]}" -eq 0 ]]; then
-    echo "ERROR: No usable ethernet interfaces were detected." >&2
-    echo "Ignored interfaces: lo, docker*, br-*, veth*, virbr*, zt*, tailscale*, wg*, tun*, tap*, cni*, flannel*, vxlan*, cali*, lxc*, nerdctl*." >&2
+    echo "ERROR: No usable physical/primary ethernet interfaces were detected." >&2
     exit 1
   fi
 }
@@ -175,164 +194,141 @@ print_interfaces() {
   echo
 }
 
-read_iface_selection() {
-  local zone_name="$1"
-  local prompt="$2"
-  shift 2
-  local already_assigned=("$@")
-  local input normalized token idx iface assigned
-
-  while true; do
-    read -r -p "$prompt" input
-    input="$(trim "$input")"
-    log "Interface selection input for $zone_name: '${input:-blank}'"
-
-    if [[ -z "$input" ]]; then
-      echo ""
-      return 0
-    fi
-
-    normalized="${input//,/ }"
-
-    local ok=1
-    local selected=()
-    local seen=" "
-
-    for token in $normalized; do
-      if [[ ! "$token" =~ ^[0-9]+$ ]]; then
-        echo "ERROR: '$token' is not a valid menu number. Enter one or more numbers from the list, for example: 1 or 1,2." >&2
-        ok=0
-        break
-      fi
-
-      idx=$((token - 1))
-      if (( token < 1 || token > ${#DETECTED_IFACES[@]} )); then
-        echo "ERROR: '$token' is outside the valid range 1-${#DETECTED_IFACES[@]}. Try again." >&2
-        ok=0
-        break
-      fi
-
-      iface="${DETECTED_IFACES[$idx]}"
-      if [[ "$seen" == *" $iface "* ]]; then
-        echo "ERROR: Interface '$iface' was selected more than once for $zone_name. Try again." >&2
-        ok=0
-        break
-      fi
-
-      for assigned in "${already_assigned[@]}"; do
-        if [[ "$iface" == "$assigned" ]]; then
-          echo "ERROR: Interface '$iface' is already assigned to another zone. Pick a different interface for $zone_name." >&2
-          ok=0
-          break
-        fi
-      done
-      [[ "$ok" -eq 0 ]] && break
-
-      selected+=("$iface")
-      seen+="$iface "
-    done
-
-    if [[ "$ok" -eq 1 ]]; then
-      log "Interface selection resolved for $zone_name: ${selected[*]}"
-      printf '%s\n' "${selected[*]}"
-      return 0
-    fi
-  done
+zone_label_for_choice() {
+  case "$1" in
+    0) echo "unassigned" ;;
+    1) echo "domain_zone" ;;
+    2) echo "storage_zone" ;;
+    3) echo "restricted_zone" ;;
+    *) echo "invalid" ;;
+  esac
 }
 
-iface_zone_label() {
+profile_label_for_choice() {
+  case "$1" in
+    0) echo "zone-base" ;;
+    1) echo "rke2-server" ;;
+    2) echo "rke2-agent" ;;
+    3) echo "rke2-singlenode" ;;
+    4) echo "harbor-docker" ;;
+    5) echo "custom-ingress" ;;
+    *) echo "invalid" ;;
+  esac
+}
+
+read_zone_for_iface() {
   local iface="$1"
-  if array_contains "$iface" "${DOMAIN_IFACES_GLOBAL[@]}"; then
-    echo "domain_zone"
-  elif array_contains "$iface" "${RESTRICTED_IFACES_GLOBAL[@]}"; then
-    echo "restricted_zone"
-  elif array_contains "$iface" "${STORAGE_IFACES_GLOBAL[@]}"; then
-    echo "storage_zone"
-  else
-    echo "unassigned"
-  fi
-}
-
-read_iface_selection_from_allowed_list() {
-  local selection_name="$1"
-  local prompt="$2"
-  shift 2
-  local allowed_ifaces=("$@")
-  local input normalized token idx iface
-
-  if [[ "${#allowed_ifaces[@]}" -eq 0 ]]; then
-    echo ""
-    return 0
-  fi
-
-  echo >&2
-  echo "Eligible interfaces for $selection_name:" >&2
-  local i=1 zone_label
-  for iface in "${allowed_ifaces[@]}"; do
-    zone_label="$(iface_zone_label "$iface")"
-    printf '  %2d) %-18s zone=%s\n' "$i" "$iface" "$zone_label" >&2
-    ((i++))
-  done
-
+  local choice zone
   while true; do
-    read -r -p "$prompt" input
-    input="$(trim "$input")"
-    log "Interface selection input for $selection_name: '${input:-blank}'"
-
-    if [[ -z "$input" ]]; then
-      echo ""
+    echo
+    echo "Select firewall zone for interface: $iface"
+    echo "  0) Unassigned / no rules"
+    echo "  1) domain_zone     - trusted admin/LAN"
+    echo "  2) storage_zone    - backend NFS/iSCSI"
+    echo "  3) restricted_zone - service/DMZ/VIP ingress"
+    read -r -p "Zone choice [0-3]: " choice
+    choice="$(trim "$choice")"
+    [[ -z "$choice" ]] && choice="0"
+    log "Zone selection for $iface: ${choice:-blank}"
+    zone="$(zone_label_for_choice "$choice")"
+    if [[ "$zone" != "invalid" ]]; then
+      echo "$zone"
       return 0
     fi
+    echo "ERROR: Enter 0, 1, 2, or 3." >&2
+  done
+}
 
-    normalized="${input//,/ }"
+validate_profile_for_zone() {
+  local zone="$1"
+  local profile="$2"
+
+  case "$profile" in
+    zone-base)
+      return 0
+      ;;
+    rke2-server|rke2-agent|rke2-singlenode)
+      if [[ "$zone" == "restricted_zone" ]]; then
+        echo "WARNING: Applying $profile to restricted_zone exposes Kubernetes internals on a service/DMZ NIC."
+        yes_no "Continue anyway?" "N" || return 1
+      elif [[ "$zone" == "storage_zone" ]]; then
+        echo "WARNING: Applying $profile to storage_zone mixes Kubernetes control/node traffic with storage traffic."
+        yes_no "Continue anyway?" "N" || return 1
+      fi
+      return 0
+      ;;
+    harbor-docker)
+      if [[ "$zone" == "storage_zone" ]]; then
+        echo "ERROR: Harbor-Docker profile is not allowed on storage_zone. Pick domain_zone or restricted_zone." >&2
+        return 1
+      fi
+      return 0
+      ;;
+    custom-ingress)
+      if [[ "$zone" == "storage_zone" ]]; then
+        echo "WARNING: Custom ingress on storage_zone is usually a footprint problem."
+        yes_no "Continue anyway?" "N" || return 1
+      fi
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+read_profiles_for_iface() {
+  local iface="$1"
+  local zone="$2"
+  local input normalized token profile
+  while true; do
+    echo
+    echo "Select workload profile(s) for $iface ($zone). Use comma/space-separated numbers."
+    echo "  0) Zone base only"
+    echo "  1) RKE2-Server      - controller/server/etcd"
+    echo "  2) RKE2-Agent       - worker/agent"
+    echo "  3) RKE2-SingleNode  - single-node cluster; no Istio overlay prompt by default"
+    echo "  4) Harbor-Docker    - Docker-published Harbor/service"
+    echo "  5) Custom-Ingress   - explicit TCP/UDP service ports, optionally scoped to K8s VIPs"
+    read -r -p "Profile choice(s) [default: 0]: " input
+    input="$(trim "$input")"
+    [[ -z "$input" ]] && input="0"
+    normalized="$(normalize_list "$input")"
+    log "Profile selection for $iface: $normalized"
+
     local ok=1
     local selected=()
     local seen=" "
 
     for token in $normalized; do
-      if [[ ! "$token" =~ ^[0-9]+$ ]]; then
-        echo "ERROR: '$token' is not a valid menu number. Enter one or more numbers from the list, for example: 1 or 1,2." >&2
+      if [[ ! "$token" =~ ^[0-5]$ ]]; then
+        echo "ERROR: '$token' is invalid. Enter values from 0 to 5." >&2
         ok=0
         break
       fi
-
-      idx=$((token - 1))
-      if (( token < 1 || token > ${#allowed_ifaces[@]} )); then
-        echo "ERROR: '$token' is outside the valid range 1-${#allowed_ifaces[@]}. Try again." >&2
+      profile="$(profile_label_for_choice "$token")"
+      if [[ "$seen" == *" $profile "* ]]; then
+        echo "ERROR: Profile '$profile' was selected more than once." >&2
         ok=0
         break
       fi
-
-      iface="${allowed_ifaces[$idx]}"
-      if [[ "$seen" == *" $iface "* ]]; then
-        echo "ERROR: Interface '$iface' was selected more than once. Try again." >&2
+      if [[ "$profile" == "zone-base" && "$normalized" != "0" ]]; then
+        echo "ERROR: Do not combine 0/zone-base with other profiles." >&2
         ok=0
         break
       fi
-
-      selected+=("$iface")
-      seen+="$iface "
+      if ! validate_profile_for_zone "$zone" "$profile"; then
+        ok=0
+        break
+      fi
+      selected+=("$profile")
+      seen+="$profile "
     done
 
     if [[ "$ok" -eq 1 ]]; then
-      log "Interface selection resolved for $selection_name: ${selected[*]}"
       printf '%s\n' "${selected[*]}"
       return 0
     fi
-  done
-}
-
-validate_no_overlap() {
-  local all_ifaces=("$@")
-  local seen=" " iface
-  for iface in "${all_ifaces[@]}"; do
-    [[ -z "$iface" ]] && continue
-    if [[ "$seen" == *" $iface "* ]]; then
-      echo "ERROR: Interface '$iface' was assigned to more than one zone." >&2
-      echo "Each NIC should belong to exactly one firewall zone for clean segmentation." >&2
-      exit 1
-    fi
-    seen+="$iface "
   done
 }
 
@@ -342,9 +338,11 @@ parse_cidrs() {
   local cidr octets octet prefix
   input="$(trim "$input")"
   [[ -z "$input" ]] && return 0
+  input="$(normalize_list "$input")"
 
   for cidr in $input; do
     if [[ "$cidr" == "any" ]]; then
+      cidrs+=("any")
       continue
     fi
 
@@ -372,6 +370,11 @@ parse_cidrs() {
     fi
   done
 
+  if array_contains "any" "${cidrs[@]}" && [[ "${#cidrs[@]}" -gt 1 ]]; then
+    echo "ERROR: Do not combine 'any' with specific CIDRs." >&2
+    exit 1
+  fi
+
   printf '%s\n' "${cidrs[@]}"
 }
 
@@ -397,7 +400,7 @@ parse_ports() {
   local p
   input="$(trim "$input")"
   [[ -z "$input" ]] && return 0
-  input="${input//,/ }"
+  input="$(normalize_list "$input")"
 
   for p in $input; do
     if ! validate_port_or_range "$p"; then
@@ -408,6 +411,44 @@ parse_ports() {
   done
 
   printf '%s\n' "${ports[@]}"
+}
+
+parse_proto_port_specs() {
+  local input="$1"
+  local specs=()
+  local item proto port
+  input="$(trim "$input")"
+  [[ -z "$input" ]] && return 0
+  input="$(normalize_list "$input")"
+
+  for item in $input; do
+    if [[ ! "$item" =~ ^(tcp|udp)/[0-9]+(:[0-9]+)?$ ]]; then
+      echo "ERROR: '$item' is invalid. Use tcp/443, udp/15443, or tcp/30000:32767." >&2
+      exit 1
+    fi
+    proto="${item%%/*}"
+    port="${item#*/}"
+    if ! validate_port_or_range "$port"; then
+      echo "ERROR: '$item' has an invalid port or range." >&2
+      exit 1
+    fi
+    specs+=("$proto/$port")
+  done
+
+  printf '%s\n' "${specs[@]}"
+}
+
+prompt_cidrs() {
+  local prompt="$1"
+  local default="${2:-}"
+  local raw
+  read -r -p "$prompt" raw
+  raw="$(trim "$raw")"
+  if [[ -z "$raw" && -n "$default" ]]; then
+    raw="$default"
+  fi
+  log "CIDR input for prompt '$prompt': '${raw:-blank}'"
+  parse_cidrs "$raw"
 }
 
 backup_current_config() {
@@ -448,7 +489,7 @@ apply_sysctl_hardening() {
 
   log "Writing sysctl hardening drop-in: $SYSCTL_DROPIN"
   cat > "$SYSCTL_DROPIN" <<SYSCTL_EOF
-# Created by setup-ufw-zones-v6.sh
+# Created by setup-ufw-zones-v7.sh
 # Multi-NIC firewall hardening.
 
 # $forwarding_comment
@@ -495,186 +536,300 @@ configure_ufw_defaults() {
   run_cmd ufw default deny incoming
   run_cmd ufw default allow outgoing
   run_cmd ufw default deny routed
-
-  # High during commissioning. Drop to medium later if too noisy.
   run_cmd ufw logging high
 }
 
-ufw_allow_in() {
+normalize_sources_for_ufw() {
+  local src="$1"
+  if [[ -z "$src" || "$src" == "any" ]]; then
+    echo "any"
+  else
+    echo "$src"
+  fi
+}
+
+normalize_dests_for_ufw() {
+  local dst="$1"
+  if [[ -z "$dst" || "$dst" == "any" ]]; then
+    echo "any"
+  else
+    echo "$dst"
+  fi
+}
+
+ufw_allow_in_scoped() {
   local iface="$1"
   local proto="$2"
   local port="$3"
   local comment="$4"
-  shift 4
-  local sources=("$@")
+  local sources_csv="$5"
+  local dests_csv="$6"
 
-  if [[ "${#sources[@]}" -eq 0 ]]; then
-    run_cmd ufw allow in on "$iface" proto "$proto" from any to any port "$port" comment "$comment"
-  else
-    local src
-    for src in "${sources[@]}"; do
-      run_cmd ufw allow in on "$iface" proto "$proto" from "$src" to any port "$port" comment "$comment from $src"
+  local sources=()
+  local dests=()
+  if [[ -n "$sources_csv" ]]; then
+    mapfile -t sources < <(printf '%s\n' "$sources_csv" | sed '/^$/d')
+  fi
+  if [[ -n "$dests_csv" ]]; then
+    mapfile -t dests < <(printf '%s\n' "$dests_csv" | sed '/^$/d')
+  fi
+  [[ "${#sources[@]}" -eq 0 ]] && sources=("any")
+  [[ "${#dests[@]}" -eq 0 ]] && dests=("any")
+
+  local src dst ufw_src ufw_dst
+  for src in "${sources[@]}"; do
+    ufw_src="$(normalize_sources_for_ufw "$src")"
+    for dst in "${dests[@]}"; do
+      ufw_dst="$(normalize_dests_for_ufw "$dst")"
+      run_cmd ufw allow in on "$iface" proto "$proto" from "$ufw_src" to "$ufw_dst" port "$port" comment "$comment src=$ufw_src dst=$ufw_dst"
+    done
+  done
+}
+
+ufw_route_allow_scoped() {
+  local iface="$1"
+  local proto="$2"
+  local port="$3"
+  local comment="$4"
+  local sources_csv="$5"
+  local dests_csv="$6"
+
+  local sources=()
+  local dests=()
+  if [[ -n "$sources_csv" ]]; then
+    mapfile -t sources < <(printf '%s\n' "$sources_csv" | sed '/^$/d')
+  fi
+  if [[ -n "$dests_csv" ]]; then
+    mapfile -t dests < <(printf '%s\n' "$dests_csv" | sed '/^$/d')
+  fi
+  [[ "${#sources[@]}" -eq 0 ]] && sources=("any")
+  [[ "${#dests[@]}" -eq 0 ]] && return 0
+
+  local src dst ufw_src
+  for src in "${sources[@]}"; do
+    ufw_src="$(normalize_sources_for_ufw "$src")"
+    for dst in "${dests[@]}"; do
+      [[ "$dst" == "any" ]] && continue
+      run_cmd ufw route allow in on "$iface" proto "$proto" from "$ufw_src" to "$dst" port "$port" comment "$comment route src=$ufw_src dst=$dst"
+    done
+  done
+}
+
+apply_domain_zone_base() {
+  local iface="$1"
+  local admin_sources="$2"
+  local domain_profile="$3"
+
+  ufw_allow_in_scoped "$iface" tcp 22 "domain_zone SSH inbound" "$admin_sources" ""
+
+  if [[ "$domain_profile" == "web" || "$domain_profile" == "dc" ]]; then
+    ufw_allow_in_scoped "$iface" tcp 80 "domain_zone HTTP inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" tcp 443 "domain_zone HTTPS inbound" "$admin_sources" ""
+  fi
+
+  if [[ "$domain_profile" == "dc" ]]; then
+    ufw_allow_in_scoped "$iface" tcp 53 "domain_zone DNS TCP inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" udp 53 "domain_zone DNS UDP inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" tcp 88 "domain_zone Kerberos TCP inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" udp 88 "domain_zone Kerberos UDP inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" tcp 464 "domain_zone Kerberos password TCP inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" udp 464 "domain_zone Kerberos password UDP inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" tcp 389 "domain_zone LDAP TCP inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" udp 389 "domain_zone LDAP UDP inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" tcp 636 "domain_zone LDAPS TCP inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" tcp 445 "domain_zone SMB inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" tcp 135 "domain_zone RPC endpoint mapper inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" tcp 3268 "domain_zone Global Catalog inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" tcp 3269 "domain_zone Global Catalog SSL inbound" "$admin_sources" ""
+    ufw_allow_in_scoped "$iface" udp 123 "domain_zone NTP inbound" "$admin_sources" ""
+
+    if yes_no "Add high dynamic RPC TCP range 49152:65535 for AD/DC compatibility on $iface? Wide range; trusted domain networks only." "N"; then
+      ufw_allow_in_scoped "$iface" tcp 49152:65535 "domain_zone AD dynamic RPC high range inbound" "$admin_sources" ""
+    fi
+  fi
+}
+
+apply_storage_zone_base() {
+  local iface="$1"
+  local storage_sources="$2"
+  local include_nfs_udp="$3"
+  local include_legacy_nfs="$4"
+
+  ufw_allow_in_scoped "$iface" tcp 2049 "storage_zone NFSv4 inbound" "$storage_sources" ""
+  if [[ "$include_nfs_udp" == "yes" ]]; then
+    ufw_allow_in_scoped "$iface" udp 2049 "storage_zone NFS UDP inbound" "$storage_sources" ""
+  fi
+
+  ufw_allow_in_scoped "$iface" tcp 3260 "storage_zone iSCSI target inbound" "$storage_sources" ""
+
+  if [[ "$include_legacy_nfs" == "yes" ]]; then
+    local p
+    for p in 111 20048 662 875 892 32765 32766 32767 32768; do
+      ufw_allow_in_scoped "$iface" tcp "$p" "storage_zone legacy NFSv3 pinned port $p inbound" "$storage_sources" ""
+      ufw_allow_in_scoped "$iface" udp "$p" "storage_zone legacy NFSv3 pinned port $p inbound" "$storage_sources" ""
     done
   fi
 }
 
-ufw_route_allow_to_cidr_port() {
-  local in_iface="$1"
-  local proto="$2"
-  local port="$3"
-  local dst_cidr="$4"
-  local comment="$5"
+apply_custom_ingress_rules() {
+  local iface="$1"
+  local sources_csv="$2"
+  local vip_dests_csv="$3"
+  local proto_port_specs_csv="$4"
+  local route_vip="$5"
 
-  run_cmd ufw route allow in on "$in_iface" proto "$proto" from any to "$dst_cidr" port "$port" comment "$comment"
-}
+  local spec proto port
+  [[ -z "$proto_port_specs_csv" ]] && return 0
 
-apply_restricted_zone() {
-  local iface
-  for iface in "$@"; do
-    [[ -z "$iface" ]] && continue
-    ufw_allow_in "$iface" tcp 443 "restricted_zone HTTPS inbound"
-  done
-}
-
-apply_storage_zone() {
-  local sources_csv="$1"
-  local include_nfs_udp="$2"
-  local include_legacy_nfs="$3"
-  shift 3
-
-  local sources=()
-  if [[ -n "$sources_csv" ]]; then
-    mapfile -t sources < <(printf '%s\n' "$sources_csv" | sed '/^$/d')
-  fi
-
-  local iface p
-  for iface in "$@"; do
-    [[ -z "$iface" ]] && continue
-
-    ufw_allow_in "$iface" tcp 2049 "storage_zone NFSv4 inbound" "${sources[@]}"
-
-    if [[ "$include_nfs_udp" == "yes" ]]; then
-      ufw_allow_in "$iface" udp 2049 "storage_zone NFS UDP inbound" "${sources[@]}"
+  while read -r spec; do
+    [[ -z "$spec" ]] && continue
+    proto="${spec%%/*}"
+    port="${spec#*/}"
+    ufw_allow_in_scoped "$iface" "$proto" "$port" "custom/k8s ingress $proto/$port inbound" "$sources_csv" "$vip_dests_csv"
+    if [[ "$route_vip" == "yes" ]]; then
+      ufw_route_allow_scoped "$iface" "$proto" "$port" "custom/k8s ingress $proto/$port routed VIP" "$sources_csv" "$vip_dests_csv"
     fi
+  done <<< "$proto_port_specs_csv"
+}
 
-    ufw_allow_in "$iface" tcp 3260 "storage_zone iSCSI target inbound" "${sources[@]}"
+apply_rke2_profile_rules() {
+  local iface="$1"
+  local profile="$2"
+  local api_sources="$3"
+  local node_sources="$4"
 
-    if [[ "$include_legacy_nfs" == "yes" ]]; then
-      for p in 111 20048 662 875 892 32765 32766 32767 32768; do
-        ufw_allow_in "$iface" tcp "$p" "storage_zone legacy NFSv3 pinned port $p inbound" "${sources[@]}"
-        ufw_allow_in "$iface" udp "$p" "storage_zone legacy NFSv3 pinned port $p inbound" "${sources[@]}"
+  case "$profile" in
+    rke2-server)
+      ufw_allow_in_scoped "$iface" tcp 6443 "rke2-server Kubernetes API inbound" "$api_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 9345 "rke2-server supervisor API inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 2379 "rke2-server etcd client inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 2380 "rke2-server etcd peer inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 2381 "rke2-server etcd metrics inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 10250 "rke2-server kubelet inbound" "$node_sources" ""
+      ;;
+    rke2-agent)
+      ufw_allow_in_scoped "$iface" tcp 10250 "rke2-agent kubelet inbound" "$node_sources" ""
+      ;;
+    rke2-singlenode)
+      ufw_allow_in_scoped "$iface" tcp 6443 "rke2-singlenode Kubernetes API inbound" "$api_sources" ""
+      ;;
+  esac
+}
+
+apply_cni_profile_rules() {
+  local iface="$1"
+  local cni_profile="$2"
+  local node_sources="$3"
+
+  case "$cni_profile" in
+    none)
+      :
+      ;;
+    canal-vxlan)
+      ufw_allow_in_scoped "$iface" udp 8472 "rke2 Canal VXLAN inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 9099 "rke2 Canal health inbound" "$node_sources" ""
+      ;;
+    canal-wireguard)
+      ufw_allow_in_scoped "$iface" udp 8472 "rke2 Canal VXLAN inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" udp 51820 "rke2 Canal WireGuard IPv4 inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" udp 51821 "rke2 Canal WireGuard IPv6 inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 9099 "rke2 Canal health inbound" "$node_sources" ""
+      ;;
+    calico-bgp)
+      ufw_allow_in_scoped "$iface" tcp 179 "Calico BGP inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 5473 "Calico Typha inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 9098 "Calico Typha health inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 9099 "Calico health inbound" "$node_sources" ""
+      ;;
+    calico-vxlan)
+      ufw_allow_in_scoped "$iface" udp 4789 "Calico VXLAN inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 5473 "Calico Typha inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 9098 "Calico Typha health inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" tcp 9099 "Calico health inbound" "$node_sources" ""
+      ;;
+    flannel-vxlan)
+      ufw_allow_in_scoped "$iface" udp 4789 "Flannel VXLAN inbound" "$node_sources" ""
+      ;;
+    cilium-vxlan-wireguard)
+      ufw_allow_in_scoped "$iface" tcp 4240 "Cilium health inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" udp 8472 "Cilium VXLAN inbound" "$node_sources" ""
+      ufw_allow_in_scoped "$iface" udp 51871 "Cilium WireGuard inbound" "$node_sources" ""
+      ;;
+    custom-cni)
+      :
+      ;;
+    *)
+      echo "ERROR: Unknown CNI profile: $cni_profile" >&2
+      exit 1
+      ;;
+  esac
+}
+
+apply_nodeport_rules() {
+  local iface="$1"
+  local nodeport_sources="$2"
+
+  ufw_allow_in_scoped "$iface" tcp 30000:32767 "Kubernetes NodePort TCP range inbound" "$nodeport_sources" ""
+  ufw_allow_in_scoped "$iface" udp 30000:32767 "Kubernetes NodePort UDP range inbound" "$nodeport_sources" ""
+}
+
+apply_istio_rules() {
+  local iface="$1"
+  local istio_profile="$2"
+  local sources_csv="$3"
+
+  case "$istio_profile" in
+    none)
+      return 0
+      ;;
+    sidecar-common)
+      # Official Istio non-pod-internal Envoy ports:
+      # 15001 TCP outbound, 15006 TCP inbound, 15008 HTTP2 HBONE, 15020 HTTP telemetry,
+      # 15021 HTTP health checks, 15090 HTTP Envoy telemetry.
+      for p in 15001 15006 15008 15020 15021 15090; do
+        ufw_allow_in_scoped "$iface" tcp "$p" "Istio Envoy sidecar/common port $p inbound" "$sources_csv" ""
       done
-    fi
-  done
+      # Official istiod/control-plane ports:
+      # 443 HTTPS webhook service, 15010 gRPC plaintext XDS/CA, 15012 gRPC TLS/mTLS XDS/CA,
+      # 15014 HTTP control-plane monitoring, 15017 HTTPS webhook container port.
+      for p in 443 15010 15012 15014 15017; do
+        ufw_allow_in_scoped "$iface" tcp "$p" "Istio control-plane port $p inbound" "$sources_csv" ""
+      done
+      ;;
+    gateway-eastwest)
+      # Common Istio gateway/east-west exposure. 15443 is Istio cross-network gateway mTLS.
+      for p in 15021 15443; do
+        ufw_allow_in_scoped "$iface" tcp "$p" "Istio gateway/east-west port $p inbound" "$sources_csv" ""
+      done
+      ;;
+    all-safe)
+      apply_istio_rules "$iface" sidecar-common "$sources_csv"
+      apply_istio_rules "$iface" gateway-eastwest "$sources_csv"
+      ;;
+    *)
+      echo "ERROR: Unknown Istio profile: $istio_profile" >&2
+      exit 1
+      ;;
+  esac
 }
 
-apply_domain_zone() {
-  local ssh_sources_csv="$1"
-  local domain_profile="$2"
-  shift 2
-
-  local ssh_sources=()
-  if [[ -n "$ssh_sources_csv" ]]; then
-    mapfile -t ssh_sources < <(printf '%s\n' "$ssh_sources_csv" | sed '/^$/d')
-  fi
-
-  local iface
-  for iface in "$@"; do
-    [[ -z "$iface" ]] && continue
-
-    ufw_allow_in "$iface" tcp 22 "domain_zone SSH inbound" "${ssh_sources[@]}"
-    ufw_allow_in "$iface" tcp 80 "domain_zone HTTP inbound"
-    ufw_allow_in "$iface" tcp 443 "domain_zone HTTPS inbound"
-
-    if [[ "$domain_profile" == "dc" ]]; then
-      ufw_allow_in "$iface" tcp 53 "domain_zone DNS TCP inbound"
-      ufw_allow_in "$iface" udp 53 "domain_zone DNS UDP inbound"
-      ufw_allow_in "$iface" tcp 88 "domain_zone Kerberos TCP inbound"
-      ufw_allow_in "$iface" udp 88 "domain_zone Kerberos UDP inbound"
-      ufw_allow_in "$iface" tcp 464 "domain_zone Kerberos password TCP inbound"
-      ufw_allow_in "$iface" udp 464 "domain_zone Kerberos password UDP inbound"
-      ufw_allow_in "$iface" tcp 389 "domain_zone LDAP TCP inbound"
-      ufw_allow_in "$iface" udp 389 "domain_zone LDAP UDP inbound"
-      ufw_allow_in "$iface" tcp 636 "domain_zone LDAPS TCP inbound"
-      ufw_allow_in "$iface" tcp 445 "domain_zone SMB inbound"
-      ufw_allow_in "$iface" tcp 135 "domain_zone RPC endpoint mapper inbound"
-      ufw_allow_in "$iface" tcp 3268 "domain_zone Global Catalog inbound"
-      ufw_allow_in "$iface" tcp 3269 "domain_zone Global Catalog SSL inbound"
-      ufw_allow_in "$iface" udp 123 "domain_zone NTP inbound"
-
-      if yes_no "Add high dynamic RPC TCP range 49152:65535 for AD/DC compatibility? This is a wide range; only use on trusted internal domain networks." "N"; then
-        run_cmd ufw allow in on "$iface" proto tcp from any to any port 49152:65535 comment "domain_zone AD dynamic RPC high range inbound"
-      fi
-    fi
-  done
-}
-
-k8s_profile_menu() {
-  echo
-  echo "Kubernetes/RKE2 port profiles:"
-  echo "  1) RKE2 server/control-plane/etcd baseline"
-  echo "     TCP: 6443, 9345, 2379, 2380, 2381, 10250"
-  echo "  2) RKE2 agent/worker baseline"
-  echo "     TCP: 10250"
-  echo "  3) Upstream kubeadm-style control-plane baseline"
-  echo "     TCP: 6443, 2379, 2380, 10250, 10257, 10259"
-  echo "  4) Upstream Kubernetes worker baseline"
-  echo "     TCP: 10250, 10256"
-  echo "  5) Kubernetes API only"
-  echo "     TCP: 6443"
-  echo "  6) NodePort only"
-  echo "     TCP/UDP: 30000:32767"
-  echo "  7) Custom only"
-  echo
-}
-
-read_k8s_profile() {
+read_cni_profile() {
   local choice
   while true; do
-    k8s_profile_menu >&2
-    read -r -p "Select Kubernetes/RKE2 profile [1-7]: " choice
+    echo
+    echo "Kubernetes/RKE2 CNI profile:"
+    echo "  0) None"
+    echo "  1) RKE2 Canal VXLAN        - UDP 8472, TCP 9099"
+    echo "  2) RKE2 Canal + WireGuard  - UDP 8472/51820/51821, TCP 9099"
+    echo "  3) Calico BGP             - TCP 179/5473/9098/9099"
+    echo "  4) Calico VXLAN           - UDP 4789, TCP 5473/9098/9099"
+    echo "  5) Flannel VXLAN          - UDP 4789"
+    echo "  6) Cilium VXLAN/WireGuard - TCP 4240, UDP 8472/51871"
+    echo "  7) Custom CNI ports only"
+    read -r -p "Select CNI profile [0-7]: " choice
     choice="$(trim "$choice")"
-    log "Kubernetes profile selection: '${choice:-blank}'"
-    case "$choice" in
-      1) echo "rke2-server"; return 0 ;;
-      2) echo "rke2-agent"; return 0 ;;
-      3) echo "kubeadm-control-plane"; return 0 ;;
-      4) echo "kube-worker"; return 0 ;;
-      5) echo "api-only"; return 0 ;;
-      6) echo "nodeport-only"; return 0 ;;
-      7) echo "custom-only"; return 0 ;;
-      *) echo "ERROR: Enter a number from 1 to 7." >&2 ;;
-    esac
-  done
-}
-
-k8s_cni_menu() {
-  echo
-  echo "Kubernetes/RKE2 CNI profiles:"
-  echo "  0) None"
-  echo "  1) RKE2 Canal VXLAN"
-  echo "     UDP: 8472; TCP: 9099"
-  echo "  2) RKE2 Canal VXLAN + WireGuard"
-  echo "     UDP: 8472, 51820, 51821; TCP: 9099"
-  echo "  3) Calico BGP"
-  echo "     TCP: 179, 5473, 9098, 9099"
-  echo "  4) Calico VXLAN"
-  echo "     UDP: 4789; TCP: 5473, 9098, 9099"
-  echo "  5) Flannel VXLAN"
-  echo "     UDP: 4789"
-  echo "  6) Cilium VXLAN/WireGuard baseline"
-  echo "     TCP: 4240; UDP: 8472, 51871"
-  echo "  7) Custom CNI ports only"
-  echo
-}
-
-read_k8s_cni_profile() {
-  local choice
-  while true; do
-    k8s_cni_menu >&2
-    read -r -p "Select Kubernetes/RKE2 CNI profile [0-7]: " choice
-    choice="$(trim "$choice")"
-    log "Kubernetes CNI profile selection: '${choice:-blank}'"
+    [[ -z "$choice" ]] && choice="0"
+    log "CNI profile selection: $choice"
     case "$choice" in
       0) echo "none"; return 0 ;;
       1) echo "canal-vxlan"; return 0 ;;
@@ -684,159 +839,38 @@ read_k8s_cni_profile() {
       5) echo "flannel-vxlan"; return 0 ;;
       6) echo "cilium-vxlan-wireguard"; return 0 ;;
       7) echo "custom-cni"; return 0 ;;
-      *) echo "ERROR: Enter a number from 0 to 7." >&2 ;;
+      *) echo "ERROR: Enter 0 through 7." >&2 ;;
     esac
   done
 }
 
-add_k8s_rule() {
-  local iface="$1"
-  local proto="$2"
-  local port="$3"
-  local comment="$4"
-  shift 4
-  local sources=("$@")
-
-  ufw_allow_in "$iface" "$proto" "$port" "$comment" "${sources[@]}"
-}
-
-apply_kubernetes_rules() {
-  local sources_csv="$1"
-  local k8s_profile="$2"
-  local cni_profile="$3"
-  local add_nodeports="$4"
-  local custom_specs_csv="$5"
-  shift 5
-
-  local sources=()
-  if [[ -n "$sources_csv" ]]; then
-    mapfile -t sources < <(printf '%s\n' "$sources_csv" | sed '/^$/d')
-  fi
-
-  local iface spec proto port
-  for iface in "$@"; do
-    [[ -z "$iface" ]] && continue
-    local zone_label
-    zone_label="$(iface_zone_label "$iface")"
-
-    case "$k8s_profile" in
-      rke2-server)
-        add_k8s_rule "$iface" tcp 6443 "kubernetes/rke2 $zone_label API server inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 9345 "kubernetes/rke2 $zone_label supervisor API inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 2379 "kubernetes/rke2 $zone_label etcd client inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 2380 "kubernetes/rke2 $zone_label etcd peer inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 2381 "kubernetes/rke2 $zone_label etcd metrics inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 10250 "kubernetes/rke2 $zone_label kubelet inbound" "${sources[@]}"
-        ;;
-      rke2-agent)
-        add_k8s_rule "$iface" tcp 10250 "kubernetes/rke2 $zone_label kubelet inbound" "${sources[@]}"
-        ;;
-      kubeadm-control-plane)
-        add_k8s_rule "$iface" tcp 6443 "kubernetes $zone_label API server inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 2379 "kubernetes $zone_label etcd client inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 2380 "kubernetes $zone_label etcd peer inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 10250 "kubernetes $zone_label kubelet inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 10257 "kubernetes $zone_label controller-manager secure port inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 10259 "kubernetes $zone_label scheduler secure port inbound" "${sources[@]}"
-        ;;
-      kube-worker)
-        add_k8s_rule "$iface" tcp 10250 "kubernetes $zone_label kubelet inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 10256 "kubernetes $zone_label kube-proxy healthz inbound" "${sources[@]}"
-        ;;
-      api-only)
-        add_k8s_rule "$iface" tcp 6443 "kubernetes $zone_label API server inbound" "${sources[@]}"
-        ;;
-      nodeport-only|custom-only)
-        :
-        ;;
-      *)
-        echo "ERROR: Unknown Kubernetes profile: $k8s_profile" >&2
-        exit 1
-        ;;
+read_istio_profile() {
+  local choice
+  while true; do
+    echo
+    echo "Istio service mesh firewall profile:"
+    echo "  0) None"
+    echo "  1) Sidecar/control-plane common official ports"
+    echo "     TCP: 15001,15006,15008,15020,15021,15090,443,15010,15012,15014,15017"
+    echo "  2) Gateway/east-west only"
+    echo "     TCP: 15021,15443"
+    echo "  3) Both 1 and 2"
+    echo
+    echo "Notes:"
+    echo "  - Pod-internal-only Istio ports are intentionally not opened on host NICs."
+    echo "  - Single-node clusters are intentionally not prompted for this overlay."
+    read -r -p "Select Istio profile [0-3]: " choice
+    choice="$(trim "$choice")"
+    [[ -z "$choice" ]] && choice="0"
+    log "Istio profile selection: $choice"
+    case "$choice" in
+      0) echo "none"; return 0 ;;
+      1) echo "sidecar-common"; return 0 ;;
+      2) echo "gateway-eastwest"; return 0 ;;
+      3) echo "all-safe"; return 0 ;;
+      *) echo "ERROR: Enter 0 through 3." >&2 ;;
     esac
-
-    if [[ "$add_nodeports" == "yes" || "$k8s_profile" == "nodeport-only" ]]; then
-      add_k8s_rule "$iface" tcp 30000:32767 "kubernetes $zone_label NodePort TCP range inbound" "${sources[@]}"
-      add_k8s_rule "$iface" udp 30000:32767 "kubernetes $zone_label NodePort UDP range inbound" "${sources[@]}"
-    fi
-
-    case "$cni_profile" in
-      none)
-        :
-        ;;
-      canal-vxlan)
-        add_k8s_rule "$iface" udp 8472 "kubernetes/rke2 $zone_label Canal VXLAN inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 9099 "kubernetes/rke2 $zone_label Canal health inbound" "${sources[@]}"
-        ;;
-      canal-wireguard)
-        add_k8s_rule "$iface" udp 8472 "kubernetes/rke2 $zone_label Canal VXLAN inbound" "${sources[@]}"
-        add_k8s_rule "$iface" udp 51820 "kubernetes/rke2 $zone_label Canal WireGuard IPv4 inbound" "${sources[@]}"
-        add_k8s_rule "$iface" udp 51821 "kubernetes/rke2 $zone_label Canal WireGuard IPv6 inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 9099 "kubernetes/rke2 $zone_label Canal health inbound" "${sources[@]}"
-        ;;
-      calico-bgp)
-        add_k8s_rule "$iface" tcp 179 "kubernetes $zone_label Calico BGP inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 5473 "kubernetes $zone_label Calico Typha inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 9098 "kubernetes $zone_label Calico Typha health inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 9099 "kubernetes $zone_label Calico health inbound" "${sources[@]}"
-        ;;
-      calico-vxlan)
-        add_k8s_rule "$iface" udp 4789 "kubernetes $zone_label Calico VXLAN inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 5473 "kubernetes $zone_label Calico Typha inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 9098 "kubernetes $zone_label Calico Typha health inbound" "${sources[@]}"
-        add_k8s_rule "$iface" tcp 9099 "kubernetes $zone_label Calico health inbound" "${sources[@]}"
-        ;;
-      flannel-vxlan)
-        add_k8s_rule "$iface" udp 4789 "kubernetes $zone_label Flannel VXLAN inbound" "${sources[@]}"
-        ;;
-      cilium-vxlan-wireguard)
-        add_k8s_rule "$iface" tcp 4240 "kubernetes $zone_label Cilium health inbound" "${sources[@]}"
-        add_k8s_rule "$iface" udp 8472 "kubernetes $zone_label Cilium VXLAN inbound" "${sources[@]}"
-        add_k8s_rule "$iface" udp 51871 "kubernetes $zone_label Cilium WireGuard inbound" "${sources[@]}"
-        ;;
-      custom-cni)
-        :
-        ;;
-      *)
-        echo "ERROR: Unknown Kubernetes CNI profile: $cni_profile" >&2
-        exit 1
-        ;;
-    esac
-
-    if [[ -n "$custom_specs_csv" ]]; then
-      while read -r spec; do
-        [[ -z "$spec" ]] && continue
-        proto="${spec%%/*}"
-        port="${spec#*/}"
-        add_k8s_rule "$iface" "$proto" "$port" "kubernetes $zone_label custom $proto/$port inbound" "${sources[@]}"
-      done <<< "$custom_specs_csv"
-    fi
   done
-}
-
-parse_proto_port_specs() {
-  local input="$1"
-  local specs=()
-  local item proto port
-  input="$(trim "$input")"
-  [[ -z "$input" ]] && return 0
-  input="${input//,/ }"
-
-  for item in $input; do
-    if [[ ! "$item" =~ ^(tcp|udp)/[0-9]+(:[0-9]+)?$ ]]; then
-      echo "ERROR: '$item' is invalid. Use tcp/6443, udp/8472, or tcp/30000:32767." >&2
-      exit 1
-    fi
-    proto="${item%%/*}"
-    port="${item#*/}"
-    if ! validate_port_or_range "$port"; then
-      echo "ERROR: '$item' has an invalid port or range." >&2
-      exit 1
-    fi
-    specs+=("$proto/$port")
-  done
-
-  printf '%s\n' "${specs[@]}"
 }
 
 docker_available() {
@@ -846,11 +880,6 @@ docker_available() {
 docker_daemon_running() {
   docker_available || return 1
   docker info >/dev/null 2>&1
-}
-
-docker_publishes_443() {
-  docker_daemon_running || return 1
-  docker ps --format '{{.Ports}}' 2>/dev/null | grep -Eq '(^|,| )0\.0\.0\.0:443->|(^|,| )\[::\]:443->|(^|,| ):::443->|(^|,| )443/tcp' || return 1
 }
 
 print_docker_context() {
@@ -889,41 +918,22 @@ default_docker_cidrs() {
   done | grep -Ev '^$' | sort -u
 }
 
-apply_forwarded_docker_web_rules() {
+apply_forwarded_docker_rules() {
   local dst_cidrs_csv="$1"
   local dst_ports_csv="$2"
-  shift 2
-  local allowed_ifaces=("$@")
-
-  [[ -z "$dst_cidrs_csv" || -z "$dst_ports_csv" || "${#allowed_ifaces[@]}" -eq 0 ]] && return 0
-
-  local dst_cidrs=()
-  local dst_ports=()
-  mapfile -t dst_cidrs < <(printf '%s\n' "$dst_cidrs_csv" | sed '/^$/d')
-  mapfile -t dst_ports < <(printf '%s\n' "$dst_ports_csv" | sed '/^$/d')
-
-  local iface dst port zone_label
-  for iface in "${allowed_ifaces[@]}"; do
-    [[ -z "$iface" ]] && continue
-    zone_label="$(iface_zone_label "$iface")"
-    for dst in "${dst_cidrs[@]}"; do
-      for port in "${dst_ports[@]}"; do
-        ufw_route_allow_to_cidr_port "$iface" tcp "$port" "$dst" "$zone_label Docker/Harbor forwarded TCP/$port to $dst"
-      done
-    done
-  done
-}
-
-apply_interzone_route_denies() {
+  local sources_csv="$3"
+  shift 3
   local ifaces=("$@")
-  local in_if out_if
+  [[ -z "$dst_cidrs_csv" || -z "$dst_ports_csv" || "${#ifaces[@]}" -eq 0 ]] && return 0
 
-  for in_if in "${ifaces[@]}"; do
-    [[ -z "$in_if" ]] && continue
-    for out_if in "${ifaces[@]}"; do
-      [[ -z "$out_if" ]] && continue
-      [[ "$in_if" == "$out_if" ]] && continue
-      run_cmd ufw route deny in on "$in_if" out on "$out_if" comment "deny routed traffic $in_if to $out_if"
+  local ports=()
+  mapfile -t ports < <(printf '%s\n' "$dst_ports_csv" | sed '/^$/d')
+
+  local iface port
+  for iface in "${ifaces[@]}"; do
+    [[ -z "$iface" ]] && continue
+    for port in "${ports[@]}"; do
+      ufw_route_allow_scoped "$iface" tcp "$port" "Harbor/Docker routed TCP/$port to bridge CIDR" "$sources_csv" "$dst_cidrs_csv"
     done
   done
 }
@@ -938,8 +948,7 @@ install_docker_guard() {
 
   log "Installing persistent Docker/Harbor DOCKER-USER guard"
   cat > "$DOCKER_GUARD_ENV" <<ENV_EOF
-# Created by setup-ufw-zones-v6.sh
-# Space-separated or comma-separated values.
+# Created by setup-ufw-zones-v7.sh
 ALLOWED_DOCKER_ZONE_IFACES="$allowed_ifaces_csv"
 BLOCKED_DOCKER_ZONE_IFACES="$blocked_ifaces_csv"
 DOCKER_CIDRS="$(echo "$docker_cidrs_csv" | paste -sd ' ' -)"
@@ -953,8 +962,7 @@ ENV_EOF
 set -euo pipefail
 
 ENV_FILE="/etc/default/ufw-zone-docker-guard"
-[[ -f "$ENV_FILE" ]] && # shellcheck disable=SC1090
-  source "$ENV_FILE"
+[[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
 
 ALLOWED_DOCKER_ZONE_IFACES="${ALLOWED_DOCKER_ZONE_IFACES:-}"
 BLOCKED_DOCKER_ZONE_IFACES="${BLOCKED_DOCKER_ZONE_IFACES:-}"
@@ -981,7 +989,6 @@ fi
 iptables -N DOCKER-USER 2>/dev/null || true
 iptables -N UFW-ZONE-DOCKER 2>/dev/null || true
 iptables -F UFW-ZONE-DOCKER
-
 iptables -C DOCKER-USER -j UFW-ZONE-DOCKER 2>/dev/null || iptables -I DOCKER-USER 1 -j UFW-ZONE-DOCKER
 
 iptables -A UFW-ZONE-DOCKER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
@@ -1036,52 +1043,55 @@ SERVICE_EOF
   fi
 }
 
-show_summary() {
-  local domain="$1"
-  local storage="$2"
-  local restricted="$3"
-  local storage_sources="$4"
-  local ssh_sources="$5"
-  local domain_profile="$6"
-  local nfs_udp="$7"
-  local legacy_nfs="$8"
-  local docker_mode="$9"
-  local docker_allowed_ifaces="${10}"
-  local docker_blocked_ifaces="${11}"
-  local docker_cidrs="${12}"
-  local docker_ports="${13}"
-  local docker_guard="${14}"
-  local k8s_mode="${15}"
-  local k8s_ifaces="${16}"
-  local k8s_sources="${17}"
-  local k8s_profile="${18}"
-  local k8s_cni_profile="${19}"
-  local k8s_nodeports="${20}"
-  local k8s_custom="${21}"
+apply_interzone_route_denies() {
+  local ifaces=("$@")
+  local in_if out_if
+
+  for in_if in "${ifaces[@]}"; do
+    [[ -z "$in_if" ]] && continue
+    for out_if in "${ifaces[@]}"; do
+      [[ -z "$out_if" ]] && continue
+      [[ "$in_if" == "$out_if" ]] && continue
+      run_cmd ufw route deny in on "$in_if" out on "$out_if" comment "deny routed traffic $in_if to $out_if"
+    done
+  done
+}
+
+show_plan() {
+  local admin_sources="$1"
+  local storage_sources="$2"
+  local restricted_sources="$3"
+  local vip_dests="$4"
+  local k8s_api_sources="$5"
+  local k8s_node_sources="$6"
+  local cni_profile="$7"
+  local nodeports="$8"
+  local istio_profile="$9"
+  local custom_ingress_specs="${10}"
+  local docker_cidrs="${11}"
+  local docker_ports="${12}"
+  local docker_guard="${13}"
 
   echo
   echo "=== Planned Firewall Configuration Summary ==="
-  printf '  domain_zone interface(s):           %s\n' "${domain:-not assigned}"
-  printf '  storage_zone interface(s):          %s\n' "${storage:-not assigned}"
-  printf '  restricted_zone interface(s):       %s\n' "${restricted:-not assigned}"
-  printf '  Storage allowed source CIDR(s):     %s\n' "${storage_sources:-any source on storage NIC}"
-  printf '  SSH allowed source CIDR(s):         %s\n' "${ssh_sources:-any source on domain NIC}"
-  printf '  Domain profile:                     %s\n' "$domain_profile"
-  printf '  NFS UDP/2049:                       %s\n' "$nfs_udp"
-  printf '  Legacy NFSv3 pinned ports:          %s\n' "$legacy_nfs"
-  printf '  Docker/Harbor forwarding enabled:   %s\n' "$docker_mode"
-  printf '  Docker/Harbor allowed ingress NICs: %s\n' "${docker_allowed_ifaces:-not configured}"
-  printf '  Docker/Harbor blocked zone NICs:    %s\n' "${docker_blocked_ifaces:-not configured}"
-  printf '  Docker/Harbor destination CIDR(s):  %s\n' "${docker_cidrs:-not configured}"
-  printf '  Docker/Harbor destination port(s):  %s\n' "${docker_ports:-not configured}"
-  printf '  Persistent DOCKER-USER guard:       %s\n' "$docker_guard"
-  printf '  Kubernetes/RKE2 rules enabled:      %s\n' "$k8s_mode"
-  printf '  Kubernetes/RKE2 selected NICs:      %s\n' "${k8s_ifaces:-not configured}"
-  printf '  Kubernetes/RKE2 source CIDR(s):     %s\n' "${k8s_sources:-not configured / any if enabled without CIDRs}"
-  printf '  Kubernetes/RKE2 profile:            %s\n' "${k8s_profile:-not configured}"
-  printf '  Kubernetes/RKE2 CNI profile:        %s\n' "${k8s_cni_profile:-not configured}"
-  printf '  Kubernetes/RKE2 NodePort range:     %s\n' "$k8s_nodeports"
-  printf '  Kubernetes/RKE2 custom ports:       %s\n' "${k8s_custom:-none}"
+  local iface
+  for iface in "${ASSIGNED_IFACES[@]}"; do
+    printf '  %-18s zone=%-16s profiles=%s\n' "$iface" "${IFACE_ZONE[$iface]}" "${IFACE_PROFILES[$iface]}"
+  done
+  echo
+  printf '  Admin/source CIDR(s):              %s\n' "${admin_sources:-any}"
+  printf '  Storage peer CIDR(s):              %s\n' "${storage_sources:-any}"
+  printf '  Restricted/client source CIDR(s):  %s\n' "${restricted_sources:-any}"
+  printf '  Kubernetes ingress VIP dest(s):    %s\n' "${vip_dests:-not configured}"
+  printf '  Kubernetes API/admin source(s):    %s\n' "${k8s_api_sources:-not configured}"
+  printf '  Kubernetes node/source CIDR(s):    %s\n' "${k8s_node_sources:-not configured}"
+  printf '  Kubernetes CNI profile:            %s\n' "$cni_profile"
+  printf '  Kubernetes NodePort range:         %s\n' "$nodeports"
+  printf '  Istio profile:                     %s\n' "$istio_profile"
+  printf '  Custom ingress ports:              %s\n' "${custom_ingress_specs:-none}"
+  printf '  Harbor/Docker bridge CIDR(s):      %s\n' "${docker_cidrs:-not configured}"
+  printf '  Harbor/Docker destination ports:   %s\n' "${docker_ports:-not configured}"
+  printf '  Persistent Docker guard:           %s\n' "$docker_guard"
   echo
   echo "This will reset existing UFW rules, then enable UFW. Existing UFW/Docker firewall config will be backed up first."
   echo "All script output will be logged to: $LOG_FILE"
@@ -1090,48 +1100,20 @@ show_summary() {
 
 write_audit_report() {
   local backup_dir="$1"
-  local domain_input="$2"
-  local storage_input="$3"
-  local restricted_input="$4"
-  local docker_mode="$5"
-  local docker_allowed_ifaces="$6"
-  local docker_blocked_ifaces="$7"
-  local docker_cidrs="$8"
-  local docker_ports="$9"
-  local k8s_mode="${10}"
-  local k8s_ifaces="${11}"
-  local k8s_sources="${12}"
-  local k8s_profile="${13}"
-  local k8s_cni_profile="${14}"
-  local k8s_nodeports="${15}"
-  local k8s_custom="${16}"
   local report="$backup_dir/ufw-zone-audit-after.txt"
 
   {
-    echo "=== UFW Zone Audit ==="
+    echo "=== UFW Zone/Profile Audit ==="
     echo "Version: $SCRIPT_VERSION"
     echo "Date: $(date -Is)"
     echo "Host: $(hostname -f 2>/dev/null || hostname)"
     echo "Action log: $LOG_FILE"
     echo
-    echo "Zone interfaces:"
-    echo "  domain_zone:     ${domain_input:-not assigned}"
-    echo "  storage_zone:    ${storage_input:-not assigned}"
-    echo "  restricted_zone: ${restricted_input:-not assigned}"
-    echo
-    echo "Docker/Harbor mode: ${docker_mode}"
-    echo "Docker/Harbor allowed ingress NICs: ${docker_allowed_ifaces:-not configured}"
-    echo "Docker/Harbor blocked zone NICs: ${docker_blocked_ifaces:-not configured}"
-    echo "Docker/Harbor CIDRs: ${docker_cidrs:-not configured}"
-    echo "Docker/Harbor ports: ${docker_ports:-not configured}"
-    echo
-    echo "Kubernetes/RKE2 mode: ${k8s_mode}"
-    echo "Kubernetes/RKE2 selected NICs: ${k8s_ifaces:-not configured}"
-    echo "Kubernetes/RKE2 source CIDRs: ${k8s_sources:-not configured}"
-    echo "Kubernetes/RKE2 profile: ${k8s_profile:-not configured}"
-    echo "Kubernetes/RKE2 CNI profile: ${k8s_cni_profile:-not configured}"
-    echo "Kubernetes/RKE2 NodePorts: ${k8s_nodeports}"
-    echo "Kubernetes/RKE2 custom ports: ${k8s_custom:-none}"
+    echo "Interface assignments:"
+    local iface
+    for iface in "${ASSIGNED_IFACES[@]}"; do
+      echo "  $iface zone=${IFACE_ZONE[$iface]} profiles=${IFACE_PROFILES[$iface]}"
+    done
     echo
     echo "=== ip -br addr ==="
     ip -br addr || true
@@ -1151,29 +1133,20 @@ write_audit_report() {
     echo "=== UFW show added ==="
     ufw show added || true
     echo
-    echo "=== Listeners for expected zone/Kubernetes ports ==="
-    ss -lntup 2>/dev/null | awk 'NR==1 || /:(22|80|443|2049|3260|6443|9345|2379|2380|2381|10250|10256|10257|10259|9098|9099|4240|5473)\b/' || true
+    echo "=== Listeners for expected zone/Kubernetes/Istio ports ==="
+    ss -lntup 2>/dev/null | awk 'NR==1 || /:(22|80|443|2049|3260|6443|9345|2379|2380|2381|10250|10256|10257|10259|8472|4789|51820|51821|9098|9099|4240|5473|15001|15006|15008|15010|15012|15014|15017|15020|15021|15090|15443)\b/' || true
     echo
     echo "=== Docker containers and published ports ==="
     if command -v docker >/dev/null 2>&1; then
       docker ps --format 'container={{.Names}} image={{.Image}} ports={{.Ports}}' 2>/dev/null || true
       echo
-      echo "=== Docker networks ==="
       docker network ls 2>/dev/null || true
-      echo
-      echo "=== Docker network inspect summaries ==="
-      docker network ls -q 2>/dev/null | while read -r net; do
-        docker network inspect "$net" --format 'name={{.Name}} id={{.Id}} driver={{.Driver}} subnet={{range .IPAM.Config}}{{.Subnet}} {{end}} bridge={{index .Options "com.docker.network.bridge.name"}}' 2>/dev/null || true
-      done
     else
       echo "docker command not found"
     fi
     echo
     echo "=== iptables DOCKER-USER ==="
     iptables -S DOCKER-USER 2>/dev/null || true
-    echo
-    echo "=== iptables UFW-ZONE-DOCKER ==="
-    iptables -S UFW-ZONE-DOCKER 2>/dev/null || true
     echo
     echo "=== UFW log location hints ==="
     echo "UFW traffic logs are commonly written to /var/log/ufw.log and/or journalctl -k, depending on rsyslog/journald config."
@@ -1182,14 +1155,34 @@ write_audit_report() {
     echo "Docker guard drop packet prefix: UFWZ DOCKER DROP"
     echo
     echo "=== Zone expectations ==="
-    echo "domain_zone should include TCP/22, TCP/80, TCP/443 inbound on each domain interface."
-    echo "storage_zone should include TCP/2049 and TCP/3260 inbound on each storage interface; optional UDP/2049 and legacy NFS ports only if selected."
-    echo "restricted_zone should include TCP/443 inbound only on each restricted interface."
-    echo "For Docker/Harbor, host TCP/443 may DNAT to container TCP/8443; selected ingress NICs are allowed to configured Docker destination ports only."
-    echo "For Kubernetes/RKE2, selected NICs should include only the chosen profile/CNI/NodePort/custom ports, preferably restricted to node/admin CIDRs."
+    echo "domain_zone: admin ingress only; SSH should be source-restricted."
+    echo "storage_zone: NFS/iSCSI only from storage peer CIDRs. No general admin or K8s internals unless explicitly overridden."
+    echo "restricted_zone: declared ingress/VIP ports only. No etcd, kubelet, RKE2 supervisor, CNI, storage, or Docker bridge access by default."
+    echo "Istio: only optional overlays selected with RKE2-Server/RKE2-Agent should appear; single-node profile skips Istio by default."
   } > "$report"
 
   echo "$report"
+}
+
+has_profile_anywhere() {
+  local target="$1"
+  local iface
+  for iface in "${ASSIGNED_IFACES[@]}"; do
+    if [[ " ${IFACE_PROFILES[$iface]} " == *" $target "* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+has_multinode_k8s_profile() {
+  local iface
+  for iface in "${ASSIGNED_IFACES[@]}"; do
+    if [[ " ${IFACE_PROFILES[$iface]} " == *" rke2-server "* || " ${IFACE_PROFILES[$iface]} " == *" rke2-agent "* ]]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 main() {
@@ -1203,7 +1196,7 @@ main() {
   need_cmd ss
   need_cmd iptables
 
-  echo "=== UFW Interface Zone Setup ==="
+  echo "=== UFW Interface Zone/Profile Setup ==="
   echo "Version: $SCRIPT_VERSION"
   echo "Host: $(hostname -f 2>/dev/null || hostname)"
 
@@ -1212,245 +1205,209 @@ main() {
   print_docker_context
 
   echo
-  echo "Assign zones by entering the interface menu number. Multiple interfaces can be entered as space-separated or comma-separated values."
-  echo "Example: enter '1' for a single NIC or '1,2' for two NICs. Leave blank to skip a zone."
+  echo "Assign each physical interface to a firewall zone, then apply workload profiles."
+  echo "Use domain_zone for most admin access. Keep storage_zone and restricted_zone deliberately narrow."
   echo
 
-  local domain_input storage_input restricted_input
-  local domain_ifaces=()
-  local storage_ifaces=()
-  local restricted_ifaces=()
+  local iface zone profiles profile
+  for iface in "${DETECTED_IFACES[@]}"; do
+    zone="$(read_zone_for_iface "$iface")"
+    IFACE_ZONE["$iface"]="$zone"
 
-  domain_input="$(read_iface_selection domain_zone '1) Enter interface number(s) for domain_zone [SSH/HTTP/HTTPS + optional domain services], blank to skip: ')"
-  domain_ifaces=($domain_input)
+    if [[ "$zone" == "unassigned" ]]; then
+      IFACE_PROFILES["$iface"]="none"
+      continue
+    fi
 
-  storage_input="$(read_iface_selection storage_zone '2) Enter interface number(s) for storage_zone [NFS/iSCSI only], blank to skip: ' "${domain_ifaces[@]}")"
-  storage_ifaces=($storage_input)
+    append_unique ASSIGNED_IFACES "$iface"
+    case "$zone" in
+      domain_zone) append_unique DOMAIN_IFACES "$iface" ;;
+      storage_zone) append_unique STORAGE_IFACES "$iface" ;;
+      restricted_zone) append_unique RESTRICTED_IFACES "$iface" ;;
+    esac
 
-  restricted_input="$(read_iface_selection restricted_zone '3) Enter interface number(s) for restricted_zone [HTTPS inbound only], blank to skip: ' "${domain_ifaces[@]}" "${storage_ifaces[@]}")"
-  restricted_ifaces=($restricted_input)
+    profiles="$(read_profiles_for_iface "$iface" "$zone")"
+    IFACE_PROFILES["$iface"]="$profiles"
 
-  validate_no_overlap "${domain_ifaces[@]}" "${storage_ifaces[@]}" "${restricted_ifaces[@]}"
+    for profile in $profiles; do
+      case "$profile" in
+        rke2-server|rke2-agent|rke2-singlenode) append_unique K8S_IFACES "$iface" ;;
+        harbor-docker) append_unique HARBOR_IFACES "$iface" ;;
+        custom-ingress) append_unique CUSTOM_INGRESS_IFACES "$iface" ;;
+      esac
+    done
+  done
 
-  DOMAIN_IFACES_GLOBAL=("${domain_ifaces[@]}")
-  STORAGE_IFACES_GLOBAL=("${storage_ifaces[@]}")
-  RESTRICTED_IFACES_GLOBAL=("${restricted_ifaces[@]}")
-
-  if [[ ${#restricted_ifaces[@]} -eq 0 && ${#storage_ifaces[@]} -eq 0 && ${#domain_ifaces[@]} -eq 0 ]]; then
+  if [[ "${#ASSIGNED_IFACES[@]}" -eq 0 ]]; then
     echo "ERROR: No interfaces were assigned. Nothing to do." >&2
     exit 1
   fi
 
+  local admin_sources_raw admin_sources=""
   echo
-  echo "Storage-zone source restriction is strongly recommended."
-  read -r -p "Enter storage peer CIDR(s), space-separated, or blank for any source on storage NIC: " storage_sources_raw
-  log "Storage peer CIDR input: '${storage_sources_raw:-blank}'"
-  local storage_sources
-  storage_sources="$(parse_cidrs "$storage_sources_raw")"
+  echo "Admin/domain source restriction is strongly recommended."
+  admin_sources="$(prompt_cidrs "Enter trusted admin/source CIDR(s), comma/space-separated, or blank for any: ")"
+  admin_sources_raw="$(echo "$admin_sources" | paste -sd ' ' -)"
 
-  echo
-  echo "SSH source restriction is strongly recommended."
-  read -r -p "Enter trusted SSH source CIDR(s), space-separated, or blank for any source on domain NIC: " ssh_sources_raw
-  log "SSH source CIDR input: '${ssh_sources_raw:-blank}'"
-  local ssh_sources
-  ssh_sources="$(parse_cidrs "$ssh_sources_raw")"
+  local domain_profile="ssh-only"
+  if [[ "${#DOMAIN_IFACES[@]}" -gt 0 ]]; then
+    echo
+    echo "Domain-zone base profile:"
+    echo "  1) SSH only"
+    echo "  2) SSH + HTTP/HTTPS"
+    echo "  3) SSH + HTTP/HTTPS + AD/DC/Samba domain-service ports"
+    local domain_choice
+    while true; do
+      read -r -p "Select domain-zone base profile [1-3, default 1]: " domain_choice
+      domain_choice="$(trim "$domain_choice")"
+      [[ -z "$domain_choice" ]] && domain_choice="1"
+      case "$domain_choice" in
+        1) domain_profile="ssh-only"; break ;;
+        2) domain_profile="web"; break ;;
+        3) domain_profile="dc"; break ;;
+        *) echo "ERROR: Enter 1, 2, or 3." >&2 ;;
+      esac
+    done
+  fi
 
-  local nfs_udp="no"
-  local legacy_nfs="no"
-  if [[ ${#storage_ifaces[@]} -gt 0 ]]; then
+  local storage_sources="" storage_sources_raw="" nfs_udp="no" legacy_nfs="no"
+  if [[ "${#STORAGE_IFACES[@]}" -gt 0 ]]; then
+    echo
+    echo "Storage-zone source restriction is not optional in spirit. Use storage client/initiator CIDRs."
+    storage_sources="$(prompt_cidrs "Enter storage peer CIDR(s), comma/space-separated, or blank for any on storage NIC: ")"
+    storage_sources_raw="$(echo "$storage_sources" | paste -sd ' ' -)"
+
     if yes_no "Allow NFS UDP/2049 on storage_zone? TCP-only NFSv4 is the better baseline." "N"; then
       nfs_udp="yes"
     fi
-    if yes_no "Add legacy NFSv3/rpcbind/mountd pinned ports on storage_zone? Only use if your NFS server is configured with fixed ports." "N"; then
+    if yes_no "Add legacy NFSv3/rpcbind/mountd pinned ports on storage_zone? Only if your NFS server is pinned to fixed ports." "N"; then
       legacy_nfs="yes"
     fi
   fi
 
-  local domain_profile="member"
-  if [[ ${#domain_ifaces[@]} -gt 0 ]]; then
-    if yes_no "Is this host acting as an AD Domain Controller or Samba AD DC and needs inbound domain-service ports?" "N"; then
-      domain_profile="dc"
+  local restricted_sources="" restricted_sources_raw=""
+  if [[ "${#RESTRICTED_IFACES[@]}" -gt 0 || "${#CUSTOM_INGRESS_IFACES[@]}" -gt 0 || "${#HARBOR_IFACES[@]}" -gt 0 ]]; then
+    echo
+    echo "Restricted/custom/Harbor ingress client source CIDRs control who may connect to exposed service/VIP ports."
+    restricted_sources="$(prompt_cidrs "Enter allowed client source CIDR(s) for restricted/custom ingress, or blank for any: ")"
+    restricted_sources_raw="$(echo "$restricted_sources" | paste -sd ' ' -)"
+  fi
+
+  local vip_dests="" vip_dests_raw=""
+  local custom_ingress_specs="" custom_ingress_specs_raw=""
+  local route_vip="yes"
+  if [[ "${#RESTRICTED_IFACES[@]}" -gt 0 || "${#CUSTOM_INGRESS_IFACES[@]}" -gt 0 ]]; then
+    echo
+    echo "Kubernetes ingress VIP destination IP/CIDR(s):"
+    echo "  - Use this for MetalLB/LoadBalancer/Gateway/Service VIPs, e.g. 10.0.4.50/32 or 10.0.4.50/31."
+    echo "  - Leave blank to allow traffic to any destination IP on the selected interface."
+    vip_dests="$(prompt_cidrs "Enter Kubernetes ingress VIP destination IP/CIDR(s), comma/space-separated, or blank for any destination: ")"
+    vip_dests_raw="$(echo "$vip_dests" | paste -sd ' ' -)"
+
+    read -r -p "Enter restricted/custom ingress port specs [default: tcp/443], e.g. tcp/80 tcp/443 udp/15443: " custom_ingress_specs_raw
+    custom_ingress_specs_raw="$(trim "$custom_ingress_specs_raw")"
+    [[ -z "$custom_ingress_specs_raw" ]] && custom_ingress_specs_raw="tcp/443"
+    custom_ingress_specs="$(parse_proto_port_specs "$custom_ingress_specs_raw")"
+
+    if [[ -n "$vip_dests" ]]; then
+      if ! yes_no "Also add UFW routed allow rules for these K8s VIP destination(s)? Useful for LoadBalancer/MetalLB/kube-proxy paths." "Y"; then
+        route_vip="no"
+      fi
     fi
   fi
 
-  # Kubernetes/RKE2 support.
-  local k8s_mode="no"
-  local k8s_ifaces=()
-  local k8s_input=""
-  local k8s_sources_raw=""
-  local k8s_sources=""
-  local k8s_profile=""
-  local k8s_cni_profile=""
-  local k8s_nodeports="no"
-  local k8s_custom_raw=""
-  local k8s_custom=""
-  local all_assigned_ifaces=("${domain_ifaces[@]}" "${storage_ifaces[@]}" "${restricted_ifaces[@]}")
-
-  echo
-  if yes_no "Add Kubernetes/RKE2 port profile rules on selected NICs?" "N"; then
-    k8s_mode="yes"
-    echo "Select the physical NIC(s) that should accept Kubernetes/RKE2 traffic. Usually this is the cluster/private domain NIC, not storage or public restricted."
-    k8s_input="$(read_iface_selection_from_allowed_list kubernetes_rke2 'Enter interface number(s) for Kubernetes/RKE2 inbound rules, blank to cancel Kubernetes rules: ' "${all_assigned_ifaces[@]}")"
-    k8s_ifaces=($k8s_input)
-    if [[ ${#k8s_ifaces[@]} -eq 0 ]]; then
-      echo "ERROR: Kubernetes/RKE2 support was enabled but no interface was selected." >&2
-      exit 1
-    fi
+  local k8s_api_sources="" k8s_api_sources_raw=""
+  local k8s_node_sources="" k8s_node_sources_raw=""
+  local cni_profile="none"
+  local nodeports="no"
+  local istio_profile="none"
+  if [[ "${#K8S_IFACES[@]}" -gt 0 ]]; then
+    echo
+    echo "Kubernetes/RKE2 API source CIDRs should be admin/jumpbox/Rancher/automation CIDRs only."
+    k8s_api_sources="$(prompt_cidrs "Enter Kubernetes API/admin source CIDR(s), or blank to reuse admin/source CIDR(s): " "$admin_sources_raw")"
+    k8s_api_sources_raw="$(echo "$k8s_api_sources" | paste -sd ' ' -)"
 
     echo
-    echo "Kubernetes/RKE2 source restriction is not optional in spirit. Use node/admin CIDRs where possible."
-    read -r -p "Enter Kubernetes node/admin source CIDR(s), space-separated, or blank for any source on selected NIC(s): " k8s_sources_raw
-    log "Kubernetes/RKE2 source CIDR input: '${k8s_sources_raw:-blank}'"
-    k8s_sources="$(parse_cidrs "$k8s_sources_raw")"
+    echo "Kubernetes/RKE2 node source CIDRs should be cluster node CIDRs only."
+    k8s_node_sources="$(prompt_cidrs "Enter Kubernetes node/server source CIDR(s), or blank to reuse admin/source CIDR(s): " "$admin_sources_raw")"
+    k8s_node_sources_raw="$(echo "$k8s_node_sources" | paste -sd ' ' -)"
 
-    k8s_profile="$(read_k8s_profile)"
-    k8s_cni_profile="$(read_k8s_cni_profile)"
+    cni_profile="$(read_cni_profile)"
 
-    if [[ "$k8s_profile" != "nodeport-only" ]]; then
-      if yes_no "Allow Kubernetes NodePort TCP/UDP range 30000:32767 on selected NIC(s)? Only do this if this node exposes NodePort services." "N"; then
-        k8s_nodeports="yes"
-      fi
-    else
-      k8s_nodeports="yes"
+    if yes_no "Allow Kubernetes NodePort TCP/UDP range 30000:32767 on selected K8s NIC(s)? Usually no when using LoadBalancer/Gateway/Ingress VIPs." "N"; then
+      nodeports="yes"
     fi
 
-    read -r -p "Enter additional Kubernetes custom ports as proto/port specs, e.g. tcp/6443 udp/8472 tcp/30000:32767, or blank for none: " k8s_custom_raw
-    k8s_custom_raw="$(trim "$k8s_custom_raw")"
-    log "Kubernetes/RKE2 custom port specs input: '${k8s_custom_raw:-blank}'"
-    k8s_custom="$(parse_proto_port_specs "$k8s_custom_raw")"
+    if has_multinode_k8s_profile; then
+      echo
+      echo "Istio is optional. This only opens host firewall paths for official Istio service-mesh ports on selected RKE2 server/agent NICs."
+      echo "Do not enable this on public/restricted NICs unless you truly intend that exposure."
+      if yes_no "Add Istio service mesh port profile on RKE2-Server/RKE2-Agent interfaces?" "N"; then
+        istio_profile="$(read_istio_profile)"
+      fi
+    elif has_profile_anywhere "rke2-singlenode"; then
+      echo
+      echo "RKE2-SingleNode selected. Skipping Istio service-mesh port prompt by default."
+      echo "Single-node clusters can run Istio for app behavior, but they do not need multi-node mesh firewall plumbing."
+      echo "Expose Istio Gateway service traffic with Custom-Ingress/VIP rules instead."
+    fi
   fi
 
-  # Docker/Harbor support.
-  local docker_mode="no"
-  local docker_guard="no"
-  local docker_cidrs_raw=""
-  local docker_ports_raw=""
-  local docker_cidrs=""
-  local docker_ports=""
-  local docker_allowed_input=""
-  local docker_allowed_ifaces=()
+  local docker_cidrs="" docker_cidrs_raw="" docker_ports="" docker_ports_raw="" docker_guard="no"
   local docker_blocked_ifaces=()
-  local docker_eligible_ifaces=()
+  if [[ "${#HARBOR_IFACES[@]}" -gt 0 ]]; then
+    echo
+    echo "Harbor-Docker profile selected. Docker bridge CIDRs/ports are needed because published ports may traverse FORWARD after Docker DNAT."
+    local suggested_cidrs=""
+    suggested_cidrs="$(default_docker_cidrs | paste -sd ' ' -)"
+    [[ -n "$suggested_cidrs" ]] && echo "Detected Docker CIDR candidate(s): $suggested_cidrs"
 
-  docker_eligible_ifaces=("${domain_ifaces[@]}" "${restricted_ifaces[@]}")
-
-  echo
-  if docker_daemon_running; then
-    echo "Docker is running. If Harbor or another container publishes host TCP/443, enable Docker/Harbor forwarding."
-    echo "You will choose which domain_zone and/or restricted_zone Ethernet interfaces may forward to Docker bridge subnets/ports."
-
-    local docker_default="N"
-    if docker_publishes_443; then
-      echo "Docker appears to have TCP/443 published. Harbor-style forwarding should be enabled for the correct ingress NIC."
-      docker_default="Y"
+    read -r -p "Enter Docker destination CIDR(s), or press Enter to use detected candidate(s): " docker_cidrs_raw
+    docker_cidrs_raw="$(trim "$docker_cidrs_raw")"
+    [[ -z "$docker_cidrs_raw" ]] && docker_cidrs_raw="$suggested_cidrs"
+    if [[ -z "$docker_cidrs_raw" ]]; then
+      echo "ERROR: Harbor-Docker requires Docker destination CIDR(s), e.g. 172.17.0.0/16 or 172.18.0.0/16." >&2
+      exit 1
     fi
+    docker_cidrs="$(parse_cidrs "$docker_cidrs_raw")"
 
-    if [[ ${#docker_eligible_ifaces[@]} -eq 0 ]]; then
-      echo "Docker is running, but no domain_zone or restricted_zone interface was assigned. Docker forwarding will not be configured."
-    elif yes_no "Enable Docker/Harbor published-port support?" "$docker_default"; then
-      docker_mode="yes"
-      docker_allowed_input="$(read_iface_selection_from_allowed_list docker_forwarding 'Enter interface number(s) allowed to forward to Docker bridge subnets/ports, blank to disable: ' "${docker_eligible_ifaces[@]}")"
-      docker_allowed_ifaces=($docker_allowed_input)
+    read -r -p "Enter Docker destination TCP port(s), comma/space-separated [default: 80,443,8080,8443]: " docker_ports_raw
+    docker_ports_raw="$(trim "$docker_ports_raw")"
+    [[ -z "$docker_ports_raw" ]] && docker_ports_raw="80,443,8080,8443"
+    docker_ports="$(parse_ports "$docker_ports_raw")"
 
-      if [[ ${#docker_allowed_ifaces[@]} -eq 0 ]]; then
-        echo "ERROR: Docker/Harbor support was enabled but no forwarding interface was selected." >&2
-        exit 1
+    for iface in "${ASSIGNED_IFACES[@]}"; do
+      if ! array_contains "$iface" "${HARBOR_IFACES[@]}"; then
+        docker_blocked_ifaces+=("$iface")
       fi
+    done
 
-      local suggested_cidrs
-      suggested_cidrs="$(default_docker_cidrs | paste -sd ' ' -)"
-      if [[ -n "$suggested_cidrs" ]]; then
-        echo "Detected Docker CIDR candidate(s): $suggested_cidrs"
-      fi
-      read -r -p "Enter Docker destination CIDR(s), or press Enter to use detected candidate(s): " docker_cidrs_raw
-      docker_cidrs_raw="$(trim "$docker_cidrs_raw")"
-      if [[ -z "$docker_cidrs_raw" ]]; then
-        docker_cidrs_raw="$suggested_cidrs"
-      fi
-      if [[ -z "$docker_cidrs_raw" ]]; then
-        echo "ERROR: Docker/Harbor support requires at least one Docker destination CIDR, e.g. 172.17.0.0/16 or 172.18.0.0/16." >&2
-        exit 1
-      fi
-      log "Docker destination CIDR input: $docker_cidrs_raw"
-      docker_cidrs="$(parse_cidrs "$docker_cidrs_raw")"
-
-      echo "For Harbor, keep 8443. Include 443 too if the container listens directly on 443."
-      read -r -p "Enter Docker destination TCP port(s), comma/space-separated [default: 80,443,8080,8443]: " docker_ports_raw
-      docker_ports_raw="$(trim "$docker_ports_raw")"
-      [[ -z "$docker_ports_raw" ]] && docker_ports_raw="80,443,8080,8443"
-      log "Docker destination port input: $docker_ports_raw"
-      docker_ports="$(parse_ports "$docker_ports_raw")"
-
-      local ziface
-      for ziface in "${domain_ifaces[@]}" "${restricted_ifaces[@]}" "${storage_ifaces[@]}"; do
-        [[ -z "$ziface" ]] && continue
-        if ! array_contains "$ziface" "${docker_allowed_ifaces[@]}"; then
-          docker_blocked_ifaces+=("$ziface")
-        fi
-      done
-
-      if yes_no "Install persistent DOCKER-USER guard to block storage/non-selected zones from Docker container CIDRs?" "Y"; then
-        docker_guard="yes"
-      fi
-    fi
-  else
-    echo "Docker is not running or is not reachable. Docker/Harbor forwarding will not be configured by default."
-    if [[ ${#docker_eligible_ifaces[@]} -gt 0 ]] && yes_no "Configure Docker/Harbor forwarding manually anyway? Only use this if Docker will run later with bridge networks." "N"; then
-      docker_mode="yes"
-      docker_allowed_input="$(read_iface_selection_from_allowed_list docker_forwarding 'Enter interface number(s) allowed to forward to Docker bridge subnets/ports, blank to disable: ' "${docker_eligible_ifaces[@]}")"
-      docker_allowed_ifaces=($docker_allowed_input)
-      if [[ ${#docker_allowed_ifaces[@]} -eq 0 ]]; then
-        echo "ERROR: Docker/Harbor support was enabled but no forwarding interface was selected." >&2
-        exit 1
-      fi
-      read -r -p "Enter Docker destination CIDR(s), e.g. 172.17.0.0/16 or 172.18.0.0/16: " docker_cidrs_raw
-      docker_cidrs_raw="$(trim "$docker_cidrs_raw")"
-      if [[ -z "$docker_cidrs_raw" ]]; then
-        echo "ERROR: Manual Docker/Harbor support requires at least one Docker destination CIDR." >&2
-        exit 1
-      fi
-      log "Docker destination CIDR input: $docker_cidrs_raw"
-      docker_cidrs="$(parse_cidrs "$docker_cidrs_raw")"
-
-      read -r -p "Enter Docker destination TCP port(s), comma/space-separated [default: 80,443,8080,8443]: " docker_ports_raw
-      docker_ports_raw="$(trim "$docker_ports_raw")"
-      [[ -z "$docker_ports_raw" ]] && docker_ports_raw="80,443,8080,8443"
-      log "Docker destination port input: $docker_ports_raw"
-      docker_ports="$(parse_ports "$docker_ports_raw")"
-
-      local ziface
-      for ziface in "${domain_ifaces[@]}" "${restricted_ifaces[@]}" "${storage_ifaces[@]}"; do
-        [[ -z "$ziface" ]] && continue
-        if ! array_contains "$ziface" "${docker_allowed_ifaces[@]}"; then
-          docker_blocked_ifaces+=("$ziface")
-        fi
-      done
-
-      if yes_no "Install persistent DOCKER-USER guard to block storage/non-selected zones from Docker container CIDRs?" "Y"; then
-        docker_guard="yes"
-      fi
+    if yes_no "Install persistent DOCKER-USER guard to block storage/non-selected zones from Docker container CIDRs?" "Y"; then
+      docker_guard="yes"
     fi
   fi
 
-  local docker_allowed_summary docker_blocked_summary k8s_ifaces_summary forwarding_required forwarding_reason
-  docker_allowed_summary="$(join_by_space "${docker_allowed_ifaces[@]:-}")"
+  local harbor_ifaces_summary docker_blocked_summary k8s_ifaces_summary
+  harbor_ifaces_summary="$(join_by_space "${HARBOR_IFACES[@]:-}")"
   docker_blocked_summary="$(join_by_space "${docker_blocked_ifaces[@]:-}")"
-  k8s_ifaces_summary="$(join_by_space "${k8s_ifaces[@]:-}")"
+  k8s_ifaces_summary="$(join_by_space "${K8S_IFACES[@]:-}")"
 
-  forwarding_required="no"
-  forwarding_reason="none"
-  if [[ "$docker_mode" == "yes" && "$k8s_mode" == "yes" ]]; then
+  local forwarding_required="no"
+  local forwarding_reason="none"
+  if [[ "${#HARBOR_IFACES[@]}" -gt 0 && "${#K8S_IFACES[@]}" -gt 0 ]]; then
     forwarding_required="yes"
-    forwarding_reason="Docker/Harbor published-port forwarding and Kubernetes/RKE2 networking"
-  elif [[ "$docker_mode" == "yes" ]]; then
+    forwarding_reason="Harbor/Docker published-port forwarding and Kubernetes/RKE2 networking"
+  elif [[ "${#HARBOR_IFACES[@]}" -gt 0 ]]; then
     forwarding_required="yes"
-    forwarding_reason="Docker/Harbor published-port forwarding"
-  elif [[ "$k8s_mode" == "yes" ]]; then
+    forwarding_reason="Harbor/Docker published-port forwarding"
+  elif [[ "${#K8S_IFACES[@]}" -gt 0 ]]; then
     forwarding_required="yes"
     forwarding_reason="Kubernetes/RKE2 networking"
   fi
 
-  show_summary "$domain_input" "$storage_input" "$restricted_input" "$storage_sources_raw" "$ssh_sources_raw" "$domain_profile" "$nfs_udp" "$legacy_nfs" "$docker_mode" "$docker_allowed_summary" "$docker_blocked_summary" "$docker_cidrs_raw" "$docker_ports_raw" "$docker_guard" "$k8s_mode" "$k8s_ifaces_summary" "$k8s_sources_raw" "$k8s_profile" "$k8s_cni_profile" "$k8s_nodeports" "$k8s_custom_raw"
+  show_plan "$admin_sources_raw" "$storage_sources_raw" "$restricted_sources_raw" "$vip_dests_raw" \
+    "$k8s_api_sources_raw" "$k8s_node_sources_raw" "$cni_profile" "$nodeports" "$istio_profile" \
+    "$custom_ingress_specs_raw" "$docker_cidrs_raw" "$docker_ports_raw" "$docker_guard"
 
   if ! yes_no "Apply this firewall configuration now?" "N"; then
     echo "No changes applied. Action log saved at: $LOG_FILE"
@@ -1466,35 +1423,68 @@ main() {
   echo "Configuring UFW defaults..."
   configure_ufw_defaults
 
-  echo "Applying domain_zone rules..."
-  apply_domain_zone "$ssh_sources" "$domain_profile" "${domain_ifaces[@]}"
+  echo "Applying zone base and profile rules..."
+  for iface in "${ASSIGNED_IFACES[@]}"; do
+    zone="${IFACE_ZONE[$iface]}"
+    profiles="${IFACE_PROFILES[$iface]}"
 
-  echo "Applying storage_zone rules..."
-  apply_storage_zone "$storage_sources" "$nfs_udp" "$legacy_nfs" "${storage_ifaces[@]}"
+    case "$zone" in
+      domain_zone)
+        apply_domain_zone_base "$iface" "$admin_sources" "$domain_profile"
+        ;;
+      storage_zone)
+        apply_storage_zone_base "$iface" "$storage_sources" "$nfs_udp" "$legacy_nfs"
+        ;;
+      restricted_zone)
+        # Restricted zone intentionally has no implicit broad service exposure.
+        # It gets only the declared restricted/custom ingress rules below.
+        :
+        ;;
+    esac
 
-  echo "Applying restricted_zone rules..."
-  apply_restricted_zone "${restricted_ifaces[@]}"
+    if [[ " $profiles " == *" custom-ingress "* || "$zone" == "restricted_zone" ]]; then
+      apply_custom_ingress_rules "$iface" "$restricted_sources" "$vip_dests" "$custom_ingress_specs" "$route_vip"
+    fi
 
-  if [[ "$k8s_mode" == "yes" ]]; then
-    echo "Applying Kubernetes/RKE2 rules on selected interfaces..."
-    apply_kubernetes_rules "$k8s_sources" "$k8s_profile" "$k8s_cni_profile" "$k8s_nodeports" "$k8s_custom" "${k8s_ifaces[@]}"
-  fi
+    if [[ " $profiles " == *" rke2-server "* ]]; then
+      apply_rke2_profile_rules "$iface" rke2-server "$k8s_api_sources" "$k8s_node_sources"
+      apply_cni_profile_rules "$iface" "$cni_profile" "$k8s_node_sources"
+      [[ "$nodeports" == "yes" ]] && apply_nodeport_rules "$iface" "$restricted_sources"
+      [[ "$istio_profile" != "none" ]] && apply_istio_rules "$iface" "$istio_profile" "$k8s_node_sources"
+    fi
 
-  if [[ "$docker_mode" == "yes" ]]; then
-    echo "Applying routed/container Docker/Harbor web rules for selected domain/restricted interfaces..."
-    apply_forwarded_docker_web_rules "$docker_cidrs" "$docker_ports" "${docker_allowed_ifaces[@]}"
+    if [[ " $profiles " == *" rke2-agent "* ]]; then
+      apply_rke2_profile_rules "$iface" rke2-agent "$k8s_api_sources" "$k8s_node_sources"
+      apply_cni_profile_rules "$iface" "$cni_profile" "$k8s_node_sources"
+      [[ "$nodeports" == "yes" ]] && apply_nodeport_rules "$iface" "$restricted_sources"
+      [[ "$istio_profile" != "none" ]] && apply_istio_rules "$iface" "$istio_profile" "$k8s_node_sources"
+    fi
+
+    if [[ " $profiles " == *" rke2-singlenode "* ]]; then
+      apply_rke2_profile_rules "$iface" rke2-singlenode "$k8s_api_sources" "$k8s_node_sources"
+      apply_cni_profile_rules "$iface" "$cni_profile" "$k8s_node_sources"
+      [[ "$nodeports" == "yes" ]] && apply_nodeport_rules "$iface" "$restricted_sources"
+    fi
+
+    if [[ " $profiles " == *" harbor-docker "* ]]; then
+      ufw_allow_in_scoped "$iface" tcp 443 "Harbor/Docker HTTPS host inbound" "$restricted_sources" ""
+    fi
+  done
+
+  if [[ "${#HARBOR_IFACES[@]}" -gt 0 ]]; then
+    echo "Applying routed/container Harbor-Docker rules..."
+    apply_forwarded_docker_rules "$docker_cidrs" "$docker_ports" "$restricted_sources" "${HARBOR_IFACES[@]}"
   fi
 
   echo "Applying explicit inter-zone routed traffic denies..."
-  local all_zone_ifaces=("${domain_ifaces[@]}" "${storage_ifaces[@]}" "${restricted_ifaces[@]}")
-  apply_interzone_route_denies "${all_zone_ifaces[@]}"
+  apply_interzone_route_denies "${ASSIGNED_IFACES[@]}"
 
   echo "Enabling UFW..."
   run_cmd ufw --force enable
   run_cmd ufw reload
 
-  if [[ "$docker_mode" == "yes" && "$docker_guard" == "yes" ]]; then
-    install_docker_guard "$docker_allowed_summary" "$docker_blocked_summary" "$docker_cidrs" "$docker_ports"
+  if [[ "${#HARBOR_IFACES[@]}" -gt 0 && "$docker_guard" == "yes" ]]; then
+    install_docker_guard "$harbor_ifaces_summary" "$docker_blocked_summary" "$docker_cidrs" "$docker_ports"
   fi
 
   echo
@@ -1505,7 +1495,7 @@ main() {
   ufw status numbered
 
   local audit_report
-  audit_report="$(write_audit_report "$backup_dir" "$domain_input" "$storage_input" "$restricted_input" "$docker_mode" "$docker_allowed_summary" "$docker_blocked_summary" "$docker_cidrs_raw" "$docker_ports_raw" "$k8s_mode" "$k8s_ifaces_summary" "$k8s_sources_raw" "$k8s_profile" "$k8s_cni_profile" "$k8s_nodeports" "$k8s_custom_raw")"
+  audit_report="$(write_audit_report "$backup_dir")"
 
   echo
   echo "Backup saved at: $backup_dir"
