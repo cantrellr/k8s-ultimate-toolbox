@@ -1,32 +1,12 @@
-# Example: Deployment with Custom CA Certificates
-# =============================================================================
-# This values file demonstrates deploying the toolbox with custom CA certificate
-# trust configured. Use this when you need to trust internal/enterprise CAs.
-#
-# Prerequisites:
-#   1. Create the CA secret first:
-#      kubectl create secret generic toolbox-ca-certs \
-#        --from-file=root-ca.crt=/path/to/root-ca.crt \
-#        --from-file=subordinate-ca.crt=/path/to/sub-ca.crt \
-#        -n toolbox --create-namespace
-#
-#   2. Deploy with this values file:
-#      helm install my-toolbox ./chart -f examples/values-with-ca.yaml -n toolbox
-#
-# The toolbox pod will automatically:
-#   - Mount the CA certificates from the secret
-#   - Copy them to /usr/local/share/ca-certificates/
-#   - Run update-ca-certificates to trust them
-#   - All tools (curl, openssl, mongosh, Python) will trust the CAs
-# =============================================================================
+# Example: Deployment with custom CA certificates
 
 global:
   imageRegistry: "kuberegistry.k8.cantrellcloud.net:8443/library"
   namespaceOverride: "toolbox"
 
 image:
-  repository: "ultimate-k8s-toolbox"
-  tag: "v1.0.2"
+  repository: "k8s-ultimate-toolbox"
+  tag: "v1.2.0"
   pullPolicy: IfNotPresent
 
 serviceAccount:
@@ -36,56 +16,13 @@ serviceAccount:
 resources:
   requests:
     cpu: "100m"
-    memory: "128Mi"
+    memory: "512Mi"
   limits:
-    cpu: "1"
-    memory: "720Mi"
+    cpu: "2"
+    memory: "3Gi"
 
-# =============================================================================
-# Custom CA Certificate Configuration
-# =============================================================================
 customCA:
-  # Enable custom CA certificate trust
   enabled: true
-  
-  # Name of the Kubernetes secret containing CA certificates
-  # Create this secret before deploying:
-  #   kubectl create secret generic toolbox-ca-certs \
-  #     --from-file=root-ca.crt=/path/to/root-ca.crt \
-  #     --from-file=subordinate-ca.crt=/path/to/sub-ca.crt \
-  #     -n toolbox
   secretName: "toolbox-ca-certs"
-  
-  # Mount path for CA certificates
-  # The update-ca-trust.sh script reads from this directory
   mountPath: /etc/ssl/custom-ca
-  
-  # Set to true to create the secret from inline certificate data
-  # Set to false if you create the secret manually (recommended for security)
   createSecret: false
-
-# =============================================================================
-# Example: Creating Secret with Inline Certificates (Alternative)
-# =============================================================================
-# If you prefer to manage certificates through Helm values, you can use:
-#
-# customCA:
-#   enabled: true
-#   createSecret: true
-#   secretName: "toolbox-ca-certs"
-#   certificates:
-#     - name: root-ca.crt
-#       content: |
-#         -----BEGIN CERTIFICATE-----
-#         MIIDxTCCAq2gAwIBAgIQAqxcJmoLQJuPC3nyrkYldzANBgkqhkiG9w0BAQUFADBs
-#         ... (your root CA certificate content)
-#         -----END CERTIFICATE-----
-#     - name: subordinate-ca.crt
-#       content: |
-#         -----BEGIN CERTIFICATE-----
-#         ... (your subordinate CA certificate content)
-#         -----END CERTIFICATE-----
-#
-# Note: For production, it's recommended to create secrets outside of Helm
-# to avoid storing sensitive data in version control.
-# =============================================================================
