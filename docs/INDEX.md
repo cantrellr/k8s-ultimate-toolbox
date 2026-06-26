@@ -51,7 +51,6 @@ k8s-ultimate-toolbox/
 ├── KEYCLOAK-GUIDE.md            # Keycloak operations guide
 ├── RECOMMENDED-TOOLS.md         # Tooling roadmap
 ├── OFFLINE-DEPLOYMENT.md        # Air-gapped guide
-├── NERDCTL-GUIDE.md             # Container runtime guide
 ├── MAKEFILE.md                  # Build system docs
 ├── SBOM.md                      # SBOM documentation
 ├── QUICK-REFERENCE.md           # Cheat sheet
@@ -71,6 +70,9 @@ k8s-ultimate-toolbox/
 │   └── templates/               # Kubernetes manifests
 │
 ├── docs/                        # Secondary navigation and compatibility docs
+│   ├── INDEX.md                 # Documentation index
+│   └── NERDCTL-GUIDE.md         # Container runtime guide
+│
 ├── examples/                    # Example values and deployment snippets
 ├── scripts/                     # Install, exec, CA, and offline helper scripts
 ├── tests/                       # Helm/chart validation scripts and notes
