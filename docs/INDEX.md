@@ -16,7 +16,7 @@
 | [QUICKSTART.md](../QUICKSTART.md) | Fast deployment and validation guide | Get running fast |
 | [TOOLS-REFERENCE.md](../TOOLS-REFERENCE.md) | Current tool inventory and version matrix | Confirm what is installed |
 | [POSTGRESQL-DIAGNOSTICS.md](../POSTGRESQL-DIAGNOSTICS.md) | PostgreSQL troubleshooting runbook | Triage PostgreSQL connectivity, locks, activity, and reports |
-| [KEYCLOAK-GUIDE.md](../KEYCLOAK-GUIDE.md) | Keycloak CLI and sidecar usage | Work with Keycloak realms, clients, and admin sessions |
+| [KEYCLOAK-GUIDE.md](../KEYCLOAK-GUIDE.md) | Keycloak CLI usage in the default toolbox container | Work with Keycloak realms, clients, and admin sessions |
 | [RECOMMENDED-TOOLS.md](../RECOMMENDED-TOOLS.md) | Recommended future additions and priority | Plan the next capability bump |
 | [CHANGELOG.md](../CHANGELOG.md) | Version history and release notes | See what changed |
 
@@ -92,6 +92,14 @@ kubectl wait --for=condition=available deploy/toolbox-ultimate-k8s-toolbox \
 kubectl exec -it -n toolbox deploy/toolbox-ultimate-k8s-toolbox -- bash
 ```
 
+### Keycloak tooling
+
+```bash
+kubectl exec -it -n toolbox deploy/toolbox-ultimate-k8s-toolbox -- bash
+keycloak-login.sh
+kcadm.sh get realms
+```
+
 ### Offline deployment
 
 ```bash
@@ -119,9 +127,6 @@ workspace:
   enabled: true
   storageClass: ""
   size: "10Gi"
-
-keycloakCli:
-  enabled: false
 ```
 
 ---
@@ -147,7 +152,7 @@ make clean
 | Online / connected cluster | [QUICKSTART.md](../QUICKSTART.md) |
 | Offline / air-gapped cluster | [OFFLINE-DEPLOYMENT.md](../OFFLINE-DEPLOYMENT.md) |
 | Internal CA trust | [OFFLINE-DEPLOYMENT.md](../OFFLINE-DEPLOYMENT.md) |
-| Keycloak CLI sidecar | [KEYCLOAK-GUIDE.md](../KEYCLOAK-GUIDE.md) |
+| Keycloak CLI operations | [KEYCLOAK-GUIDE.md](../KEYCLOAK-GUIDE.md) |
 | PostgreSQL triage | [POSTGRESQL-DIAGNOSTICS.md](../POSTGRESQL-DIAGNOSTICS.md) |
 
 ---
