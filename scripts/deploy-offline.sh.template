@@ -7,7 +7,7 @@ set -euo pipefail
 REGISTRY=${REGISTRY:-"kuberegistry.k8.cantrellcloud.net:8443/library"}
 NAMESPACE=${NAMESPACE:-"toolbox"}
 RELEASE_NAME=${RELEASE_NAME:-"toolbox"}
-IMAGE_REPO=${IMAGE_REPO:-"ultimate-k8s-toolbox"}
+IMAGE_REPO=${IMAGE_REPO:-"k8s-ultimate-toolbox"}
 IMAGE_TAG=${IMAGE_TAG:-"v1.2.0"}
 CA_SECRET_NAME=${CA_SECRET_NAME:-"toolbox-ca-certs"}
 ROOT_CA_PATH=${ROOT_CA_PATH:-""}
@@ -65,8 +65,8 @@ run() {
 FULL_IMAGE="${REGISTRY%/}/${IMAGE_REPO}:${IMAGE_TAG}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-IMAGE_TAR="${BUNDLE_DIR}/images/ultimate-k8s-toolbox-${IMAGE_TAG}.tar"
-CHART_PACKAGE="$(find "${BUNDLE_DIR}/charts" -maxdepth 1 -type f -name 'ultimate-k8s-toolbox-chart-*.tgz' | sort | tail -1)"
+IMAGE_TAR="${BUNDLE_DIR}/images/k8s-ultimate-toolbox-${IMAGE_TAG}.tar"
+CHART_PACKAGE="$(find "${BUNDLE_DIR}/charts" -maxdepth 1 -type f -name 'k8s-ultimate-toolbox-chart-*.tgz' | sort | tail -1)"
 
 [[ -n "$CHART_PACKAGE" ]] || fail "No packaged chart found under ${BUNDLE_DIR}/charts"
 
