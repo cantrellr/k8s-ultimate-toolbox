@@ -25,7 +25,7 @@
 | Document | Description | When to use |
 |----------|-------------|-------------|
 | [OFFLINE-DEPLOYMENT.md](../OFFLINE-DEPLOYMENT.md) | Air-gapped bundle workflow | No internet access or controlled registry imports |
-| [NERDCTL-GUIDE.md](../NERDCTL-GUIDE.md) | Container runtime guidance | Build or load images with containerd/nerdctl |
+| [NERDCTL-GUIDE.md](NERDCTL-GUIDE.md) | Container runtime guidance | Build or load images with containerd/nerdctl |
 | [MAKEFILE.md](../MAKEFILE.md) | Build system notes | Automation, packaging, and CI-like tasks |
 | [SBOM.md](../SBOM.md) | SBOM and supply-chain notes | Security review and compliance evidence |
 
