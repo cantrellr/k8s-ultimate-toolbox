@@ -137,7 +137,7 @@ pgbadger /workspace/postgresql.log -o /workspace/postgres-report.html
 | [OFFLINE-DEPLOYMENT.md](OFFLINE-DEPLOYMENT.md) | Air-gapped bundle workflow |
 | [MAKEFILE.md](MAKEFILE.md) | Build system notes |
 | [SBOM.md](SBOM.md) | SBOM and supply-chain notes |
-| [NERDCTL-GUIDE.md](NERDCTL-GUIDE.md) | Container runtime guidance |
+| [docs/NERDCTL-GUIDE.md](docs/NERDCTL-GUIDE.md) | Container runtime guidance |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ## Configuration highlights
