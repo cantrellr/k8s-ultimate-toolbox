@@ -1,6 +1,6 @@
 # Quick Start - K8s Ultimate Toolbox
 
-This guide gets the v1.2.0 toolbox running and validates the Kubernetes, runtime, Keycloak, MongoDB, PostgreSQL, RBAC, policy, and CNI tooling.
+This guide gets the v1.2.0 toolbox running and validates the Kubernetes, runtime, Keycloak, MongoDB, PostgreSQL, RBAC, policy, CNI, SELinux, and audit tooling.
 
 ## 1. Deploy online
 
@@ -27,6 +27,7 @@ show-versions.sh
 
 ```bash
 command -v crictl etcdctl etcdutl cmctl step kubent kubeconform popeye kubectl-who-can rbac-lookup cilium hubble calicoctl
+command -v getenforce sestatus semanage semodule seinfo sesearch checkpolicy checkmodule audit2allow audit2why ausearch aureport
 ```
 
 ## 3. Deploy with persistent workspace
@@ -90,7 +91,22 @@ kubectl-who-can get pods -A
 rbac-lookup system:serviceaccount:default:default
 ```
 
-## 8. CNI diagnostics
+## 8. SELinux and audit diagnostics
+
+```bash
+getenforce
+sestatus
+semanage boolean -l
+semodule -l
+seinfo
+sesearch --allow -s container_t 2>/dev/null | head
+audit2allow --help
+audit2why --help
+ausearch --help
+aureport --help
+```
+
+## 9. CNI diagnostics
 
 Use these only where the matching CNI exists in the target cluster.
 
@@ -100,7 +116,22 @@ hubble status
 calicoctl get ippools
 ```
 
-## 9. Keycloak usage
+## 10. Build a SELinux utilities air-gap tarball
+
+Run this on an internet-connected Ubuntu/Debian host that matches the target release and architecture:
+
+```bash
+make selinux-bundle
+```
+
+Copy `dist/selinux-utils-bundle/*.tar.gz` to the air-gapped target, then:
+
+```bash
+tar -xzf selinux-utils-*.tar.gz
+./install-selinux-utils.sh
+```
+
+## 11. Keycloak usage
 
 The default toolbox container includes `kcadm.sh`, `kcreg.sh`, `kc.sh`, and `keycloak-login.sh`. No sidecar is needed.
 
@@ -110,7 +141,7 @@ keycloak-login.sh
 kcadm.sh get realms
 ```
 
-## 10. PostgreSQL diagnostics
+## 12. PostgreSQL diagnostics
 
 Set the PostgreSQL host, port, database, and user in your shell. Source credentials from your approved secret workflow instead of typing them into shared shell history.
 
@@ -120,7 +151,7 @@ pg_isready
 pg-diagnostics.sh
 ```
 
-## 11. MongoDB diagnostics
+## 13. MongoDB diagnostics
 
 ```bash
 mongosh "$MONGODB_URI"
@@ -129,7 +160,7 @@ mongotop --uri "$MONGODB_URI" 5
 mongodump --uri "$MONGODB_URI" --archive=/workspace/mongodb.archive --gzip
 ```
 
-## 12. Build and test the image
+## 14. Build and test the image
 
 ```bash
 make info
@@ -137,7 +168,7 @@ make build-image
 make test-image
 ```
 
-## 13. Offline bundle
+## 15. Offline bundle
 
 On an internet-connected build host:
 
@@ -153,7 +184,7 @@ cd offline-bundle
 cat SBOM.txt
 ```
 
-## 14. Common operations
+## 16. Common operations
 
 ```bash
 helm list -n toolbox
