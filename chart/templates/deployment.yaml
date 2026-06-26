@@ -1,15 +1,15 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "ultimate-k8s-toolbox.fullname" . }}
-  namespace: {{ include "ultimate-k8s-toolbox.namespace" . }}
+  name: {{ include "k8s-ultimate-toolbox.fullname" . }}
+  namespace: {{ include "k8s-ultimate-toolbox.namespace" . }}
   labels:
-    {{- include "ultimate-k8s-toolbox.labels" . | nindent 4 }}
+    {{- include "k8s-ultimate-toolbox.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "ultimate-k8s-toolbox.selectorLabels" . | nindent 6 }}
+      {{- include "k8s-ultimate-toolbox.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
@@ -17,12 +17,12 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "ultimate-k8s-toolbox.selectorLabels" . | nindent 8 }}
+        {{- include "k8s-ultimate-toolbox.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ include "ultimate-k8s-toolbox.serviceAccountName" . }}
+      serviceAccountName: {{ include "k8s-ultimate-toolbox.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -34,7 +34,7 @@ spec:
       {{- if .Values.customCA.enabled }}
       initContainers:
         - name: update-ca-trust
-          image: {{ include "ultimate-k8s-toolbox.image" . }}
+          image: {{ include "k8s-ultimate-toolbox.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             runAsUser: 0
@@ -92,7 +92,7 @@ spec:
       {{- end }}
       containers:
         - name: toolbox
-          image: {{ include "ultimate-k8s-toolbox.image" . }}
+          image: {{ include "k8s-ultimate-toolbox.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- with .Values.container.command }}
           command:
@@ -156,7 +156,7 @@ spec:
         - name: workspace
           {{- if .Values.workspace.storageClass }}
           persistentVolumeClaim:
-            claimName: {{ include "ultimate-k8s-toolbox.fullname" . }}-workspace
+            claimName: {{ include "k8s-ultimate-toolbox.fullname" . }}-workspace
           {{- else }}
           emptyDir: {}
           {{- end }}
