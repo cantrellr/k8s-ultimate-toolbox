@@ -9,13 +9,13 @@
 ╚═══════════════════════════════════════════════════════════════════════╝
 ```
 
-**A Kubernetes administration workstation pod for cluster, identity, database, network, storage, runtime, RBAC, policy, CNI, and air-gapped troubleshooting.**
+**A Kubernetes administration workstation pod for cluster, identity, database, network, storage, runtime, RBAC, policy, CNI, SELinux, audit, and air-gapped troubleshooting.**
 
 ## Executive summary
 
 K8s Ultimate Toolbox deploys a controlled, repeatable troubleshooting pod into a Kubernetes namespace. It gives platform engineers one known-good operational shell instead of forcing troubleshooting tools into every application image.
 
-The v1.2.0 release implements the recommended next additions: `crictl`, `etcdctl`, `etcdutl`, `cmctl`, `step`, `kubent`, `kubeconform`, `popeye`, `kubectl-who-can`, `rbac-lookup`, `cilium`, `hubble`, and `calicoctl`.
+The v1.2.0 release implements the recommended next additions: `crictl`, `etcdctl`, `etcdutl`, `cmctl`, `step`, `kubent`, `kubeconform`, `popeye`, `kubectl-who-can`, `rbac-lookup`, `cilium`, `hubble`, `calicoctl`, plus SELinux and audit utilities.
 
 ## What changed in v1.2.0
 
@@ -28,6 +28,7 @@ The v1.2.0 release implements the recommended next additions: `crictl`, `etcdctl
 | Cluster hygiene | `popeye` |
 | RBAC | `kubectl-who-can`, `rbac-lookup` |
 | CNI | `cilium`, `hubble`, `calicoctl` |
+| SELinux / audit | `getenforce`, `sestatus`, `semanage`, `semodule`, `seinfo`, `sesearch`, `checkpolicy`, `checkmodule`, `audit2allow`, `audit2why`, `ausearch`, `aureport` |
 
 ## Architecture
 
@@ -43,6 +44,7 @@ Kubernetes Cluster
         │   ├── cmctl / step
         │   ├── kubent / kubeconform / popeye
         │   ├── kubectl-who-can / rbac-lookup
+        │   ├── SELinux and audit tools
         │   ├── cilium / hubble / calicoctl
         │   ├── PostgreSQL and MongoDB diagnostics
         │   ├── network and TLS tools
@@ -80,12 +82,27 @@ show-versions.sh
 | Identity | `kcadm.sh`, `kcreg.sh`, `kc.sh`, `keycloak-login.sh` |
 | Certificates / PKI | `cmctl`, `step`, `openssl`, `certtool` |
 | Policy / RBAC / upgrade | `kubent`, `kubeconform`, `popeye`, `kubectl-who-can`, `rbac-lookup` |
+| SELinux / audit | `getenforce`, `sestatus`, `semanage`, `semodule`, `seinfo`, `sesearch`, `checkpolicy`, `checkmodule`, `audit2allow`, `audit2why`, `ausearch`, `aureport` |
 | CNI | `cilium`, `hubble`, `calicoctl` |
 | PostgreSQL | `psql`, `pg_isready`, `pg_dump`, `pg_restore`, `pgbench`, `pgcli`, `pg_activity`, `pgbadger`, `pg-diagnostics.sh` |
 | MongoDB | `mongosh`, `mongodump`, `mongorestore`, `mongoexport`, `mongoimport`, `mongostat`, `mongotop`, `bsondump` |
 | Network | `curl`, `wget`, `dig`, `nslookup`, `host`, `nc`, `nmap`, `tcpdump`, `traceroute`, `mtr`, `iperf3`, `socat`, `ping`, `telnet`, `ss`, `netstat`, `whois` |
 | Storage | `tridentctl`, `nfs-common`, `rsync`, `ssh`, `tar`, `zip`, `unzip` |
 | Scripting | Python 3, `kubernetes`, `requests`, `PyYAML`, `Jinja2`, `click`, `SQLAlchemy` |
+
+## SELinux utilities offline bundle
+
+Create a host-installable tarball of SELinux utilities and dependency `.deb` packages from an internet-connected Ubuntu/Debian build host:
+
+```bash
+make selinux-bundle
+```
+
+Copy the generated `dist/selinux-utils-bundle/*.tar.gz` to the air-gapped target, extract it, and run:
+
+```bash
+./install-selinux-utils.sh
+```
 
 ## Documentation
 
@@ -102,26 +119,16 @@ show-versions.sh
 | [docs/NERDCTL-GUIDE.md](docs/NERDCTL-GUIDE.md) | Container runtime guidance |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
-## Configuration highlights
-
-| Value | Default | Notes |
-|---|---:|---|
-| `image.repository` | `k8s-ultimate-toolbox` | Toolbox image repository |
-| `image.tag` | `v1.2.0` | Deterministic default image tag |
-| `global.imageRegistry` | empty | Prefix for private/offline registries |
-| `workspace.enabled` | `true` | Mounts `/workspace` |
-| `workspace.storageClass` | empty | Empty means `emptyDir`; set for PVC |
-| `customCA.enabled` | `false` | Enables CA trust init container |
-
 ## Build and offline bundle
 
 ```bash
 make info
 make build-image
 make offline-bundle
+make selinux-bundle
 ```
 
-The offline bundle includes the image tarball, packaged Helm chart, deployment scripts, SBOM text output, checksums, and docs.
+The offline bundle includes the image tarball, packaged Helm chart, deployment scripts, SBOM text output, checksums, and docs. The SELinux utilities bundle is a separate host-installable `.deb` tarball.
 
 ## Security posture
 
