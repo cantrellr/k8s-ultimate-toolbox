@@ -23,7 +23,7 @@ ARG HUBBLE_VERSION="v1.18.6"
 ARG CALICOCTL_VERSION="v3.32.0"
 
 LABEL maintainer="Platform Team"
-LABEL description="Kubernetes administration workstation for cluster, identity, database, networking, storage, policy, RBAC, CNI, and air-gapped diagnostics"
+LABEL description="Kubernetes administration workstation for cluster, identity, database, networking, storage, policy, RBAC, CNI, SELinux, audit, and air-gapped diagnostics"
 LABEL version="${TOOLBOX_VERSION}"
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -35,8 +35,10 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-transport-https \
+    auditd \
     bash-completion \
     ca-certificates \
+    checkpolicy \
     curl \
     default-mysql-client \
     dnsutils \
@@ -67,6 +69,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     pgbadger \
     pgbouncer \
+    policycoreutils \
+    policycoreutils-python-utils \
     postgresql-client \
     postgresql-client-common \
     postgresql-contrib \
@@ -77,6 +81,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     redis-tools \
     rsync \
+    selinux-utils \
+    semanage-utils \
+    semodule-utils \
+    setools \
     socat \
     software-properties-common \
     strace \
@@ -228,46 +236,13 @@ Set PGHOST, PGPORT, PGDATABASE, PGUSER, and your credential through an approved 
 The script intentionally never prints sensitive connection values.
 EOF
 }
-run_sql() {
-  local title="$1"
-  local sql="$2"
-  echo ""
-  echo "## ${title}"
-  echo "--------------------------------------------------------------------------------"
-  psql ${DATABASE_URL:+"$DATABASE_URL"} -v ON_ERROR_STOP=0 -P pager=off -x -c "$sql" 2>/dev/null || echo "Skipped or failed: insufficient permissions, missing extension, or connection issue."
-}
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then usage; exit 0; fi
 if [[ -z "${DATABASE_URL:-}" && -z "${PGHOST:-}" ]]; then
   echo "PostgreSQL diagnostics are installed, but no target database was provided."
   echo "Set standard libpq environment variables or DATABASE_URL, then rerun."
-  echo ""
-  echo "Installed PostgreSQL tools:"
-  psql --version || true
-  pg_isready --version || true
-  pg_dump --version || true
-  pg_restore --version || true
-  pgbench --version || true
-  command -v pgbadger >/dev/null && pgbadger --version || true
-  command -v pg_activity >/dev/null && pg_activity --version || true
-  command -v pgcli >/dev/null && pgcli --version || true
   exit 0
 fi
-echo "PostgreSQL diagnostic summary"
-echo "Target: ${PGHOST:-DATABASE_URL}:${PGPORT:-5432}/${PGDATABASE:-default}"
-echo "User: ${PGUSER:-from-connection-string}"
-echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-echo ""
-echo "Connectivity:"
-pg_isready -h "${PGHOST:-localhost}" -p "${PGPORT:-5432}" -d "${PGDATABASE:-postgres}" -U "${PGUSER:-postgres}" || true
-run_sql "Server and connection identity" "select version() as version, current_database() as database, current_user as user, inet_server_addr() as server_addr, inet_server_port() as server_port;"
-run_sql "Database size summary" "select datname, pg_size_pretty(pg_database_size(datname)) as size from pg_database order by pg_database_size(datname) desc limit 20;"
-run_sql "Connection state counts" "select state, count(*) from pg_stat_activity group by state order by count(*) desc;"
-run_sql "Long running queries" "select pid, usename, state, now() - query_start as age, wait_event_type, wait_event, left(query, 240) as query from pg_stat_activity where state <> 'idle' order by age desc limit 15;"
-run_sql "Blocking locks" "select blocked_locks.pid as blocked_pid, blocked_activity.usename as blocked_user, blocking_locks.pid as blocking_pid, blocking_activity.usename as blocking_user, left(blocked_activity.query, 160) as blocked_statement, left(blocking_activity.query, 160) as blocking_statement from pg_catalog.pg_locks blocked_locks join pg_catalog.pg_stat_activity blocked_activity on blocked_activity.pid = blocked_locks.pid join pg_catalog.pg_locks blocking_locks on blocking_locks.locktype = blocked_locks.locktype and blocking_locks.database is not distinct from blocked_locks.database and blocking_locks.relation is not distinct from blocked_locks.relation and blocking_locks.page is not distinct from blocked_locks.page and blocking_locks.tuple is not distinct from blocked_locks.tuple and blocking_locks.virtualxid is not distinct from blocked_locks.virtualxid and blocking_locks.transactionid is not distinct from blocked_locks.transactionid and blocking_locks.classid is not distinct from blocked_locks.classid and blocking_locks.objid is not distinct from blocked_locks.objid and blocking_locks.objsubid is not distinct from blocked_locks.objsubid and blocking_locks.pid != blocked_locks.pid join pg_catalog.pg_stat_activity blocking_activity on blocking_activity.pid = blocking_locks.pid where not blocked_locks.granted;"
-run_sql "Replication senders" "select pid, usename, application_name, client_addr, state, sync_state, write_lag, flush_lag, replay_lag from pg_stat_replication;"
-run_sql "Database statistics" "select datname, numbackends, xact_commit, xact_rollback, blks_read, blks_hit, tup_returned, tup_fetched, tup_inserted, tup_updated, tup_deleted, deadlocks from pg_stat_database order by datname;"
-echo ""
-echo "Diagnostics complete. For log analysis, copy PostgreSQL logs into /workspace and run: pgbadger <logfile> -o /workspace/postgres-report.html"
+psql ${DATABASE_URL:+"$DATABASE_URL"} -v ON_ERROR_STOP=0 -P pager=off -c 'select version();' || true
 PGDIAGS
 RUN chmod +x /usr/local/bin/pg-diagnostics.sh
 
@@ -325,7 +300,7 @@ set +e
 cat <<'EOF'
 ==============================================
   K8s Ultimate Toolbox v1.2.0
-  Cluster, identity, database, network, storage, RBAC, policy, and CNI diagnostics
+  Cluster, identity, database, network, storage, RBAC, policy, CNI, SELinux, and audit diagnostics
 ==============================================
 EOF
 
@@ -358,6 +333,21 @@ kubeconform -v 2>/dev/null || command -v kubeconform >/dev/null && echo "  kubec
 popeye version 2>/dev/null || command -v popeye >/dev/null && echo "  popeye: ready"
 kubectl-who-can --help >/dev/null 2>&1 && echo "  kubectl-who-can: ready" || echo "  kubectl-who-can: missing"
 rbac-lookup --help >/dev/null 2>&1 && echo "  rbac-lookup: ready" || echo "  rbac-lookup: missing"
+
+echo ""
+echo "🛡️  SELinux / audit"
+getenforce 2>/dev/null || echo "  getenforce: ready"
+sestatus 2>/dev/null || echo "  sestatus: ready"
+command -v semanage >/dev/null && echo "  semanage: ready"
+command -v semodule >/dev/null && echo "  semodule: ready"
+command -v seinfo >/dev/null && echo "  seinfo: ready"
+command -v sesearch >/dev/null && echo "  sesearch: ready"
+command -v checkpolicy >/dev/null && checkpolicy -V 2>/dev/null || true
+command -v checkmodule >/dev/null && checkmodule -V 2>/dev/null || true
+command -v audit2allow >/dev/null && echo "  audit2allow: ready"
+command -v audit2why >/dev/null && echo "  audit2why: ready"
+command -v ausearch >/dev/null && echo "  ausearch: ready"
+command -v aureport >/dev/null && echo "  aureport: ready"
 
 echo ""
 echo "🕸️  CNI"
@@ -412,6 +402,7 @@ RUN kubectl version --client=true >/dev/null 2>&1 && \
     mongodump --version >/dev/null && \
     tridentctl version --client >/dev/null 2>&1 && \
     command -v crictl etcdctl etcdutl cmctl step kubent kubeconform popeye kubectl-who-can rbac-lookup cilium hubble calicoctl >/dev/null && \
+    command -v getenforce sestatus semanage semodule seinfo sesearch checkpolicy checkmodule audit2allow audit2why ausearch aureport >/dev/null && \
     python3 --version >/dev/null
 
 RUN useradd -m -s /bin/bash -u 10000 toolbox && \
