@@ -1,6 +1,6 @@
 # Recommended Tools Roadmap
 
-The original high-priority recommendations have been implemented in v1.2.0.
+The original high-priority recommendations have been implemented in v1.2.0. SELinux and audit utilities were also added for hardened Linux, RHEL-family, OpenShift-adjacent, and policy troubleshooting workflows.
 
 ## Implemented in v1.2.0
 
@@ -13,6 +13,8 @@ The original high-priority recommendations have been implemented in v1.2.0.
 | Cluster hygiene | `popeye` |
 | Access review | `kubectl-who-can`, `rbac-lookup` |
 | CNI diagnostics | `cilium`, `hubble`, `calicoctl` |
+| SELinux / audit | `getenforce`, `sestatus`, `semanage`, `semodule`, `seinfo`, `sesearch`, `checkpolicy`, `checkmodule`, `audit2allow`, `audit2why`, `ausearch`, `aureport` |
+| Air-gapped host utilities | `scripts/build-selinux-utils-bundle.sh` creates a `.deb` dependency tarball for offline targets |
 
 ## Still recommended for future releases
 
