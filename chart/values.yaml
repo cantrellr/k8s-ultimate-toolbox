@@ -83,6 +83,7 @@ container:
       echo "  - Identity: kcadm.sh, kcreg.sh, kc.sh, keycloak-login.sh";
       echo "  - Certificates/PKI: cmctl, step, openssl, certtool";
       echo "  - Policy/RBAC/upgrade: kubent, kubeconform, popeye, kubectl-who-can, rbac-lookup";
+      echo "  - SELinux/audit: getenforce, sestatus, semanage, semodule, seinfo, sesearch, audit2allow, audit2why, ausearch, aureport";
       echo "  - CNI: cilium, hubble, calicoctl";
       echo "  - PostgreSQL: psql, pg_isready, pg_dump, pg_restore, pgbench, pgcli, pg_activity, pgbadger, pg-diagnostics.sh";
       echo "  - MongoDB: mongosh, mongodump, mongorestore, mongoexport, mongoimport, mongostat, mongotop";
