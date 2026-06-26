@@ -110,6 +110,7 @@ Copy the generated `dist/selinux-utils-bundle/*.tar.gz` to the air-gapped target
 |---|---|
 | [QUICKSTART.md](QUICKSTART.md) | Fast deployment and validation |
 | [TOOLS-REFERENCE.md](TOOLS-REFERENCE.md) | Tool inventory and version matrix |
+| [SELINUX-UTILITIES.md](SELINUX-UTILITIES.md) | SELinux/audit tooling and air-gap package bundle guide |
 | [POSTGRESQL-DIAGNOSTICS.md](POSTGRESQL-DIAGNOSTICS.md) | PostgreSQL troubleshooting runbook |
 | [KEYCLOAK-GUIDE.md](KEYCLOAK-GUIDE.md) | Keycloak CLI usage in the default toolbox container |
 | [RECOMMENDED-TOOLS.md](RECOMMENDED-TOOLS.md) | Implemented and future tooling roadmap |
