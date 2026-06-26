@@ -19,7 +19,7 @@
 
 K8s Ultimate Toolbox deploys a controlled, repeatable troubleshooting pod into a Kubernetes namespace. It is designed for platform engineers who need fast access to known-good tools without turning every application container into a debugging science project.
 
-The v1.1.0 release updates the core toolchain, adds first-class Keycloak support, and adds PostgreSQL diagnostics that are useful in the real world: readiness checks, connection inspection, lock analysis, query visibility, backup/restore validation, `pgBadger`, `pgcli`, `pg_activity`, and the helper script `pg-diagnostics.sh`.
+The v1.1.0 release updates the core toolchain, includes Keycloak tooling in the default toolbox container, and adds PostgreSQL diagnostics that are useful in the real world: readiness checks, connection inspection, lock analysis, query visibility, backup/restore validation, `pgBadger`, `pgcli`, `pg_activity`, and the helper script `pg-diagnostics.sh`.
 
 ## What changed in v1.1.0
 
@@ -28,7 +28,7 @@ The v1.1.0 release updates the core toolchain, adds first-class Keycloak support
 | Kubernetes | Updated `kubectl` to `v1.36.1` |
 | Helm | Updated to `v4.2.1` |
 | YAML | Updated `yq` to `v4.53.3` |
-| Identity | Updated Keycloak CLI tooling to `26.6.3` and retained optional Keycloak sidecar support |
+| Identity | Included Keycloak CLI tooling `26.6.3` in the default toolbox container |
 | MongoDB | Updated `mongosh` to `2.8.3` and MongoDB Database Tools to `100.17.0` |
 | PostgreSQL | Added `psql`, `pg_isready`, `pg_dump`, `pg_restore`, `pgbench`, `pgBadger`, `pgcli`, `pg_activity`, Python `psycopg`, and `pg-diagnostics.sh` |
 | Storage | Updated `tridentctl` to `26.02.0` |
@@ -49,7 +49,6 @@ Kubernetes Cluster
         │   ├── MongoDB tools
         │   ├── network and TLS tools
         │   └── storage tools
-        ├── optional sidecar: keycloak-cli
         └── workspace volume: emptyDir or PVC
 ```
 
@@ -76,17 +75,17 @@ Show installed tools:
 show-versions.sh
 ```
 
-## Deploy with Keycloak sidecar
+## Keycloak tooling
 
-The main image already includes `kcadm.sh`, `kcreg.sh`, and `kc.sh`. The optional sidecar is useful when you want identity work isolated into the official Keycloak container image.
+The default toolbox image includes `kcadm.sh`, `kcreg.sh`, `kc.sh`, and `keycloak-login.sh`. No separate Keycloak sidecar is deployed or required.
 
 ```bash
-helm install toolbox ./chart \
-  -n keycloak-system --create-namespace \
-  --set keycloakCli.enabled=true
-
-kubectl exec -it -n keycloak-system deploy/toolbox-ultimate-k8s-toolbox -c keycloak-cli -- /bin/sh
+kubectl exec -it -n toolbox deploy/toolbox-ultimate-k8s-toolbox -- bash
+keycloak-login.sh
+kcadm.sh get realms
 ```
+
+Use Kubernetes Secrets or another approved secret workflow for Keycloak credentials. Do not put admin credentials in the image, Helm values, Git history, ticket comments, or screenshots.
 
 ## PostgreSQL diagnostics example
 
@@ -132,7 +131,7 @@ pgbadger /workspace/postgresql.log -o /workspace/postgres-report.html
 | [QUICKSTART.md](QUICKSTART.md) | Fast deployment and validation |
 | [TOOLS-REFERENCE.md](TOOLS-REFERENCE.md) | Tool inventory and version matrix |
 | [POSTGRESQL-DIAGNOSTICS.md](POSTGRESQL-DIAGNOSTICS.md) | PostgreSQL troubleshooting runbook |
-| [KEYCLOAK-GUIDE.md](KEYCLOAK-GUIDE.md) | Keycloak CLI and sidecar usage |
+| [KEYCLOAK-GUIDE.md](KEYCLOAK-GUIDE.md) | Keycloak CLI usage in the default toolbox container |
 | [RECOMMENDED-TOOLS.md](RECOMMENDED-TOOLS.md) | Recommended future additions and priority |
 | [OFFLINE-DEPLOYMENT.md](OFFLINE-DEPLOYMENT.md) | Air-gapped bundle workflow |
 | [MAKEFILE.md](MAKEFILE.md) | Build system notes |
@@ -150,7 +149,6 @@ pgbadger /workspace/postgresql.log -o /workspace/postgres-report.html
 | `workspace.enabled` | `true` | Mounts `/workspace` |
 | `workspace.storageClass` | empty | Empty means `emptyDir`; set for PVC |
 | `customCA.enabled` | `false` | Enables CA trust init container |
-| `keycloakCli.enabled` | `false` | Optional official Keycloak sidecar |
 | `resources.limits.memory` | `2Gi` | Higher than v1.0.2 because PostgreSQL/Java tooling is included |
 
 ## Build and offline bundle
