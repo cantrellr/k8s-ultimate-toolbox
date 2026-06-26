@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# setup-ufw-zones-v12.sh
+# setup-ufw-zones-v12.1.sh
 #
 # Quick-first UFW zone/profile firewall setup for multi-NIC Ubuntu/RKE2 hosts.
 #
-# v12 changes:
-#   - Default workflow is Quick Setup, not advanced/manual.
-#   - Adds "use latest saved config" shortcut.
-#   - Preset modes reduce prompts for common RKE2/Contour/Storage/Harbor layouts.
-#   - Advanced/manual mode remains available for unusual hosts.
-#   - Keeps import/export and tighter RKE2 role-specific port model.
+# v12.1 changes:
+#   - Import flow now prompts for the config file path, using latest as the default when present.
+#   - Imported configs are displayed and the user is asked whether changes are needed before apply.
+#   - Contour/Envoy quick setup supports multiple ingress interfaces.
+#   - Keeps v12 Quick Setup presets, import/export, and tighter RKE2 role-specific port model.
 
 set -euo pipefail
 
-SCRIPT_VERSION="2026-06-26-v12-quick-setup"
+SCRIPT_VERSION="2026-06-26-v12.1-import-edit-multi-ingress"
 CONFIG_KIND_EXPECTED="ufw-zone-profile-config"
 CONFIG_VERSION_EXPECTED="v12"
 BACKUP_ROOT="/root/ufw-zone-backups"
@@ -106,9 +105,7 @@ trim() {
   printf '%s' "$s"
 }
 
-need() {
-  command -v "$1" >/dev/null 2>&1 || { err "Required command not found: $1"; exit 1; }
-}
+need() { command -v "$1" >/dev/null 2>&1 || { err "Required command not found: $1"; exit 1; }; }
 
 yesno() {
   local prompt="$1" default="${2:-N}" reply suffix
@@ -125,12 +122,7 @@ yesno() {
   done
 }
 
-contains() {
-  local needle="$1" item
-  shift || true
-  for item in "$@"; do [[ "$item" == "$needle" ]] && return 0; done
-  return 1
-}
+contains() { local needle="$1" item; shift || true; for item in "$@"; do [[ "$item" == "$needle" ]] && return 0; done; return 1; }
 
 append() {
   local array_name="$1" value="$2"
@@ -312,17 +304,27 @@ load_config() {
 }
 
 maybe_import() {
-  local latest="$CONFIG_ROOT/$(hostname -s)-latest.conf" file
+  local latest="$CONFIG_ROOT/$(hostname -s)-latest.conf" file default_path
   step "Optional configuration import"
-  if [[ -f "$latest" ]]; then
-    echo "Latest saved config detected: $latest" >&2
-    if yesno "Use latest saved config for this host?" "Y"; then load_config "$latest"; return 0; fi
+  [[ -f "$latest" ]] && default_path="$latest" || default_path=""
+  if [[ -n "$default_path" ]]; then
+    echo "Default import file: $default_path" >&2
   fi
-  if yesno "Import a different saved configuration file?" "N"; then
-    read -r -p "${C_BOLD}Enter config file path:${C_RESET} " file
-    file="$(trim "$file")"
-    [[ -n "$file" ]] || { err "No file entered."; exit 1; }
+  if yesno "Import configuration from file?" "N"; then
+    if [[ -n "$default_path" ]]; then
+      read -r -p "${C_BOLD}Config file path [$default_path]:${C_RESET} " file
+      file="$(trim "$file")"
+      [[ -z "$file" ]] && file="$default_path"
+    else
+      read -r -p "${C_BOLD}Config file path:${C_RESET} " file
+      file="$(trim "$file")"
+    fi
+    [[ -n "$file" ]] || { err "No config file entered."; exit 1; }
     load_config "$file"
+    show_plan
+    if yesno "Make changes to imported config before applying?" "N"; then
+      collect_quick
+    fi
     return 0
   fi
   return 1
@@ -433,14 +435,28 @@ collect_quick_common_storage() {
 }
 
 collect_quick_contour() {
-  local ask_default="${1:-N}" ingress_iface
+  local ask_default="${1:-N}" ingress_iface added_any="no"
   step "Optional Contour/Envoy ingress"
   if yesno "Add Contour/Envoy ingress VIP rules?" "$ask_default"; then
-    ingress_iface="$(prompt_iface "Contour/Ingress interface number [0 to skip]: " "yes" "0")"
-    if [[ -n "$ingress_iface" ]]; then
+    while true; do
+      ingress_iface="$(prompt_iface "Contour/Ingress interface number [0 to finish]: " "yes" "0")"
+      if [[ -z "$ingress_iface" ]]; then
+        if [[ "$added_any" == "no" ]]; then
+          warn "No Contour/Ingress interface selected. Skipping Contour/Envoy rules."
+        fi
+        break
+      fi
       set_zone_if_unset "$ingress_iface" "restricted_zone"
       add_profile "$ingress_iface" "contour-envoy-ingress"
       append CONTOUR_IFACES "$ingress_iface"
+      added_any="yes"
+      if yesno "Is there another interface that will receive ingress traffic?" "N"; then
+        continue
+      fi
+      break
+    done
+
+    if [[ "$added_any" == "yes" ]]; then
       RESTRICTED_SOURCES="$(prompt_cidrs "Ingress client source CIDR(s), blank for any: ")"
       VIP_SOURCES="$RESTRICTED_SOURCES"
       while [[ -z "$VIP_DESTS" ]]; do
@@ -504,7 +520,7 @@ show_plan() { heading "=== Planned Firewall Configuration Summary ==="; [[ "$CON
 
 backup() { local backup_dir="$BACKUP_ROOT/$(date +%Y%m%d-%H%M%S)"; run mkdir -p "$backup_dir"; ufw status numbered > "$backup_dir/ufw-status-numbered-before.txt" 2>&1 || true; ufw show added > "$backup_dir/ufw-show-added-before.txt" 2>&1 || true; cp -a /etc/ufw "$backup_dir/etc-ufw" 2>/dev/null || true; echo "$backup_dir"; }
 sysctl_harden() { local forwarding="$1" reason="$2" value=0; [[ "$forwarding" == "yes" ]] && value=1; cat > "$SYSCTL_DROPIN" <<EOF
-# Created by setup-ufw-zones-v12.sh
+# Created by setup-ufw-zones-v12.1.sh
 # $reason
 net.ipv4.ip_forward = $value
 net.ipv6.conf.all.forwarding = 0
