@@ -233,7 +233,7 @@ iperf3 -c iperf-server.local
 ## 📚 Documentation
 
 - **[README.md](README.md)** - Complete feature overview
-- **[NERDCTL-GUIDE.md](NERDCTL-GUIDE.md)** - nerdctl setup guide
+- **[docs/NERDCTL-GUIDE.md](docs/NERDCTL-GUIDE.md)** - nerdctl setup guide
 - **[TOOLS-REFERENCE.md](TOOLS-REFERENCE.md)** - Detailed tool reference with examples
 - **[docs/INDEX.md](docs/INDEX.md)** - Project navigation
 
