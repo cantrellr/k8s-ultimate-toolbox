@@ -28,10 +28,6 @@ make clean
 # Install
 helm install toolbox chart/ -n toolbox --create-namespace
 
-# Install with Keycloak CLI sidecar
-helm install toolbox chart/ -n keycloak-system --create-namespace \
-	--set keycloakCli.enabled=true
-
 # Upgrade
 helm upgrade toolbox chart/ -n toolbox
 
@@ -40,9 +36,6 @@ helm uninstall toolbox -n toolbox
 
 # Access pod
 kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
-
-# Access Keycloak CLI sidecar
-kubectl exec -n keycloak-system -it deploy/toolbox-ultimate-k8s-toolbox -c keycloak-cli -- /bin/sh
 ```
 
 ---
@@ -117,20 +110,10 @@ kubectl get secret secretname -n namespace -o jsonpath='{.data.key}' | base64 -d
 
 ### Keycloak Operations
 ```bash
-# Authenticate admin CLI session
-kcadm.sh config credentials \
-	--server https://keycloak.example.com \
-	--realm master \
-	--user admin
-
-# List realms
+# Keycloak CLI tools are in the default toolbox container
+keycloak-login.sh
 kcadm.sh get realms
-
-# List clients in a realm
 kcadm.sh get clients -r myrealm
-
-# Register client using client registration CLI
-kcreg.sh config credentials --server https://keycloak.example.com --realm myrealm --user admin
 kcreg.sh get my-client-id
 ```
 
@@ -174,7 +157,7 @@ EOF
 | Category | Tools |
 |----------|-------|
 | **MongoDB** | mongosh, mongodump, mongorestore, bsondump, mongostat, mongotop, mongoexport, mongoimport |
-| **Keycloak** | kcadm.sh, kcreg.sh, kc.sh |
+| **Keycloak** | kcadm.sh, kcreg.sh, kc.sh, keycloak-login.sh |
 | **TLS/X.509** | openssl, certtool (gnutls-bin) |
 | **Kubernetes** | kubectl, helm, jq, yq, envsubst |
 | **Networking** | dig, nslookup, ping, traceroute, netcat, tcpdump, nmap, curl, wget, iperf3 |
