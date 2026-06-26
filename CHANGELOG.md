@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Added SELinux and audit utilities to the toolbox image: `getenforce`, `sestatus`, `semanage`, `semodule`, `seinfo`, `sesearch`, `checkpolicy`, `checkmodule`, `audit2allow`, `audit2why`, `ausearch`, and `aureport`.
+- Added `scripts/build-selinux-utils-bundle.sh` and `make selinux-bundle` to create a host-installable SELinux utilities `.deb` tarball for air-gapped environments.
+
 ### Changed
 
 - Updated outward-facing documentation branding from `Ultimate K8s Toolbox` / `Ultimate Kubernetes Toolbox` to `K8s Ultimate Toolbox`.
