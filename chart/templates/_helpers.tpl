@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "ultimate-k8s-toolbox.name" -}}
+{{- define "k8s-ultimate-toolbox.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
 */}}
-{{- define "ultimate-k8s-toolbox.fullname" -}}
+{{- define "k8s-ultimate-toolbox.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -24,16 +24,16 @@ Create a default fully qualified app name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "ultimate-k8s-toolbox.chart" -}}
+{{- define "k8s-ultimate-toolbox.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels.
 */}}
-{{- define "ultimate-k8s-toolbox.labels" -}}
-helm.sh/chart: {{ include "ultimate-k8s-toolbox.chart" . }}
-{{ include "ultimate-k8s-toolbox.selectorLabels" . }}
+{{- define "k8s-ultimate-toolbox.labels" -}}
+helm.sh/chart: {{ include "k8s-ultimate-toolbox.chart" . }}
+{{ include "k8s-ultimate-toolbox.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -43,17 +43,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels.
 */}}
-{{- define "ultimate-k8s-toolbox.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "ultimate-k8s-toolbox.name" . }}
+{{- define "k8s-ultimate-toolbox.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "k8s-ultimate-toolbox.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use.
 */}}
-{{- define "ultimate-k8s-toolbox.serviceAccountName" -}}
+{{- define "k8s-ultimate-toolbox.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "ultimate-k8s-toolbox.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "k8s-ultimate-toolbox.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
@@ -62,7 +62,7 @@ Create the name of the service account to use.
 {{/*
 Namespace to use: global.namespaceOverride if set; otherwise the Helm release namespace.
 */}}
-{{- define "ultimate-k8s-toolbox.namespace" -}}
+{{- define "k8s-ultimate-toolbox.namespace" -}}
 {{- if .Values.global.namespaceOverride }}
 {{- .Values.global.namespaceOverride }}
 {{- else }}
@@ -75,23 +75,23 @@ Image with optional registry prefix for offline/air-gapped deployments.
 
 Examples:
   Online:
-    repository: "ultimate-k8s-toolbox"
-    tag: "v1.1.0"
-    Result: "ultimate-k8s-toolbox:v1.1.0"
+    repository: "k8s-ultimate-toolbox"
+    tag: "v1.2.0"
+    Result: "k8s-ultimate-toolbox:v1.2.0"
 
   Offline with simple registry:
     global.imageRegistry: "myregistry.local:5000"
-    repository: "ultimate-k8s-toolbox"
-    tag: "v1.1.0"
-    Result: "myregistry.local:5000/ultimate-k8s-toolbox:v1.1.0"
+    repository: "k8s-ultimate-toolbox"
+    tag: "v1.2.0"
+    Result: "myregistry.local:5000/k8s-ultimate-toolbox:v1.2.0"
 
   Offline with project path:
     global.imageRegistry: "harbor.internal.com"
-    repository: "platform/ultimate-k8s-toolbox"
-    tag: "v1.1.0"
-    Result: "harbor.internal.com/platform/ultimate-k8s-toolbox:v1.1.0"
+    repository: "platform/k8s-ultimate-toolbox"
+    tag: "v1.2.0"
+    Result: "harbor.internal.com/platform/k8s-ultimate-toolbox:v1.2.0"
 */}}
-{{- define "ultimate-k8s-toolbox.image" -}}
+{{- define "k8s-ultimate-toolbox.image" -}}
 {{- $registry := .Values.global.imageRegistry | default "" }}
 {{- $repository := .Values.image.repository }}
 {{- $tag := .Values.image.tag | default .Chart.AppVersion }}
@@ -105,7 +105,7 @@ Examples:
 {{/*
 Generate combined CA bundle from all certificates.
 */}}
-{{- define "ultimate-k8s-toolbox.caBundle" -}}
+{{- define "k8s-ultimate-toolbox.caBundle" -}}
 {{- $bundle := "" }}
 {{- range .Values.customCA.certificates }}
 {{- $bundle = printf "%s%s\n" $bundle .content }}
