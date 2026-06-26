@@ -59,22 +59,14 @@ curl -Iv https://internal-service.example.com
 
 ## 4. Keycloak usage
 
-The primary toolbox image includes Keycloak CLI tools. Use `keycloak-login.sh` after setting the Keycloak URL, realm, and admin user in the shell. Keep the credential in a Kubernetes Secret, a short-lived shell session, or another approved secret source. Do not paste production credentials into shared terminal history. That is how small mistakes become incident reports.
+The default toolbox container includes `kcadm.sh`, `kcreg.sh`, `kc.sh`, and `keycloak-login.sh`. No sidecar is needed.
+
+Use `keycloak-login.sh` after setting the Keycloak URL, realm, and admin user in the shell. Keep credentials in Kubernetes Secrets, a short-lived shell session, or another approved secret source. Do not paste production credentials into shared terminal history. That is how small mistakes become incident reports.
 
 ```bash
 kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
 keycloak-login.sh
 kcadm.sh get realms
-```
-
-Optional official Keycloak CLI sidecar:
-
-```bash
-helm upgrade --install toolbox ./chart \
-  -n keycloak-system --create-namespace \
-  --set keycloakCli.enabled=true
-
-kubectl exec -n keycloak-system -it deploy/toolbox-ultimate-k8s-toolbox -c keycloak-cli -- /bin/sh
 ```
 
 ## 5. PostgreSQL diagnostics
