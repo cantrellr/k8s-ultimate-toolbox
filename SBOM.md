@@ -8,6 +8,7 @@ K8s Ultimate Toolbox v1.2.0 generates a lightweight SBOM during `make offline-bu
 |---|---|
 | `SBOM.txt` | Human-readable component summary |
 | `images/*.sha256` | SHA256 checksum for exported image tarball |
+| `dist/selinux-utils-bundle/*.tar.gz` | Optional host-installable SELinux utilities and dependency tarball |
 
 ## Pinned components
 
@@ -34,7 +35,11 @@ The build pins the external binary components that are downloaded directly durin
 - `calicoctl v3.32.0`
 - `nerdctl 2.3.2` for build-host fallback workflows
 
-The remaining Linux packages are sourced from Ubuntu 24.04 package repositories, and Python packages are installed from PyPI during the online build phase.
+The remaining Linux packages are sourced from Ubuntu 24.04 package repositories. That package-managed set now includes SELinux and audit utilities such as `selinux-utils`, `policycoreutils`, `policycoreutils-python-utils`, `semanage-utils`, `semodule-utils`, `checkpolicy`, `setools`, and `auditd`.
+
+## SELinux offline package bundle
+
+`make selinux-bundle` creates a separate `.deb` bundle for installing SELinux utilities on an air-gapped Ubuntu/Debian host. The bundle includes package files, `SHA256SUMS`, a manifest, README, and an installer script.
 
 ## Recommended hardening
 
