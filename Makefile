@@ -48,7 +48,7 @@ package-chart:
 
 .PHONY: selinux-bundle
 selinux-bundle:
-	./scripts/build-selinux-utils-bundle.sh
+	bash ./scripts/build-selinux-utils-bundle.sh
 
 .PHONY: offline-bundle
 offline-bundle: build-image package-chart
