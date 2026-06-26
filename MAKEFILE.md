@@ -1,6 +1,6 @@
 # Makefile Documentation
 
-The Makefile automates image builds, verification, Helm chart packaging, and air-gapped bundle creation for Ultimate K8s Toolbox v1.1.0.
+The Makefile automates image builds, verification, Helm chart packaging, and air-gapped bundle creation for K8s Ultimate Toolbox v1.1.0.
 
 ## Common targets
 
