@@ -24,7 +24,7 @@ Validate:
 kcadm.sh --help
 kcreg.sh --help
 kc.sh --help
-keycloak-login.sh --help 2>/dev/null || true
+command -v keycloak-login.sh
 ```
 
 ## Authenticate
