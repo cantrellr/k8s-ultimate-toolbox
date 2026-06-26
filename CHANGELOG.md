@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Updated outward-facing documentation branding from `Ultimate K8s Toolbox` / `Ultimate Kubernetes Toolbox` to `K8s Ultimate Toolbox`.
+- Reworked the documentation index so it points to the canonical root documentation and current `k8s-ultimate-toolbox` repository URLs.
+- Replaced the stale duplicate `docs/TOOLS-REFERENCE.md` content with a compatibility pointer to the maintained root `TOOLS-REFERENCE.md` file.
+
 ## [1.1.0] - 2026-06-21
 
 ### Added
@@ -53,7 +61,7 @@ All notable changes to this project will be documented in this file.
 
 ## [1.0.0] - 2025-11-26
 
-Initial public release of Ultimate K8s Toolbox.
+Initial public release of K8s Ultimate Toolbox.
 
 ### Highlights
 
