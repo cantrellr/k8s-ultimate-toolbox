@@ -1,6 +1,6 @@
 # SBOM and Supply Chain Notes
 
-Ultimate K8s Toolbox v1.1.0 generates a lightweight SBOM during `make offline-bundle`.
+K8s Ultimate Toolbox v1.1.0 generates a lightweight SBOM during `make offline-bundle`.
 
 ## Generated files
 
