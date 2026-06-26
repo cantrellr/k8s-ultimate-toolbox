@@ -1,289 +1,196 @@
 #!/bin/bash
-# Example deployment commands for various scenarios
+# Example deployment commands for common K8s Ultimate Toolbox scenarios.
+# These examples intentionally use placeholders. Do not paste real credentials into this file.
 
-# ============================================
-# SCENARIO 1: Quick Online Test Deployment
-# ============================================
-echo "Scenario 1: Quick Online Test"
-echo "------------------------------"
-cat <<'CMD'
-helm install quick-test ../chart \
-  --set image.repository=ubuntu \
-  --set image.tag=24.04 \
-  -n default
+set -euo pipefail
 
-kubectl get pods -l app.kubernetes.io/name=ultimate-k8s-toolbox
-kubectl exec -it deploy/quick-test-ultimate-k8s-toolbox -- bash
-CMD
+cat <<'HEADER'
+============================================
+K8s Ultimate Toolbox Deployment Examples
+============================================
+HEADER
+
 echo ""
-
-# ============================================
-# SCENARIO 2: Production Online Deployment
-# ============================================
-echo "Scenario 2: Production Online"
-echo "------------------------------"
+echo "Scenario 1: Quick online deployment"
+echo "-----------------------------------"
 cat <<'CMD'
-helm install prod-toolbox ../chart \
-  -f values-online.yaml \
-  --set replicaCount=2 \
-  --set resources.limits.cpu=4 \
-  --set resources.limits.memory=8Gi \
+helm upgrade --install toolbox ../chart \
   -n toolbox --create-namespace
 
-kubectl wait --for=condition=ready pod \
-  -l app.kubernetes.io/name=ultimate-k8s-toolbox \
+kubectl wait --for=condition=available deploy/toolbox-ultimate-k8s-toolbox \
   -n toolbox --timeout=300s
-CMD
-echo ""
 
-# ============================================
-# SCENARIO 3: Offline Deployment (Harbor)
-# ============================================
-echo "Scenario 3: Offline with Harbor Registry"
-echo "-----------------------------------------"
+kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
+CMD
+
+echo ""
+echo "Scenario 2: Validate built-in Keycloak tooling"
+echo "------------------------------------------------"
 cat <<'CMD'
-# 1. Create namespace and secret
-kubectl create namespace toolbox
+kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
+
+# Inside the toolbox container:
+kcadm.sh --help
+kcreg.sh --help
+kc.sh --help
+keycloak-login.sh
+kcadm.sh get realms
+CMD
+
+echo ""
+echo "Scenario 3: Deploy with internal CA certificates"
+echo "------------------------------------------------"
+cat <<'CMD'
+kubectl create namespace toolbox --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic toolbox-ca-certs \
+  --from-file=root-ca.crt=/path/to/root-ca.crt \
+  --from-file=subordinate-ca.crt=/path/to/subordinate-ca.crt \
+  -n toolbox
+
+helm upgrade --install toolbox ../chart \
+  -n toolbox \
+  --set customCA.enabled=true \
+  --set customCA.secretName=toolbox-ca-certs
+
+kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- update-ca-trust.sh --list
+CMD
+
+echo ""
+echo "Scenario 4: Deploy with persistent workspace"
+echo "--------------------------------------------"
+cat <<'CMD'
+helm upgrade --install toolbox ../chart \
+  -n toolbox --create-namespace \
+  --set workspace.enabled=true \
+  --set workspace.storageClass=<storage-class> \
+  --set workspace.size=20Gi
+CMD
+
+echo ""
+echo "Scenario 5: Offline deployment with internal registry"
+echo "-----------------------------------------------------"
+cat <<'CMD'
+kubectl create namespace toolbox --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl create secret docker-registry regcred \
-  --docker-server=harbor.internal.company.com \
-  --docker-username=admin \
-  --docker-password=Harbor12345 \
+  --docker-server=registry.example.com \
+  --docker-username=<registry-user> \
+  --docker-password=<registry-password> \
   -n toolbox
 
-# 2. Deploy with offline values
-helm install toolbox ../chart \
-  --set global.imageRegistry="harbor.internal.company.com" \
-  --set image.repository="platfor../chart" \
-  --set image.tag="v1.0.2" \
+helm upgrade --install toolbox ../chart \
+  --set global.imageRegistry="registry.example.com/library" \
+  --set image.repository="ultimate-k8s-toolbox" \
+  --set image.tag="v1.1.0" \
   --set imagePullSecrets[0].name="regcred" \
   -n toolbox
-
-# 3. Verify
-kubectl get all -n toolbox
 CMD
-echo ""
 
-# ============================================
-# SCENARIO 4: Offline Deployment (Nexus)
-# ============================================
-echo "Scenario 4: Offline with Nexus Registry"
-echo "----------------------------------------"
+echo ""
+echo "Scenario 6: Use generated offline bundle helper"
+echo "-----------------------------------------------"
 cat <<'CMD'
-kubectl create namespace toolbox
+make offline-bundle
 
-kubectl create secret docker-registry nexus-cred \
-  --docker-server=nexus.internal.company.com:8082 \
-  --docker-username=nexus-user \
-  --docker-password=nexus-pass \
-  -n toolbox
+tar -xzf dist/ultimate-k8s-toolbox-offline-v1.1.0.tar.gz
+cd offline-bundle/scripts
 
-helm install toolbox ../chart \
-  --set global.imageRegistry="nexus.internal.company.com:8082" \
-  --set image.repository="ultimate-k8s-toolbox" \
-  --set image.tag="latest" \
-  --set imagePullSecrets[0].name="nexus-cred" \
-  -n toolbox
+./deploy-offline.sh \
+  --registry registry.example.com/library \
+  --namespace toolbox \
+  --release-name toolbox
 CMD
+
 echo ""
-
-# ============================================
-# SCENARIO 5: MongoDB Namespace with Existing SA
-# ============================================
-echo "Scenario 5: MongoDB Namespace (Existing SA)"
-echo "-------------------------------------------"
-cat <<'CMD'
-helm install mongo-toolbox ../chart \
-  --set global.imageRegistry="harbor.internal.com" \
-  --set image.repository="platfor../chart" \
-  --set serviceAccount.create=false \
-  --set serviceAccount.name="mongodb-operator" \
-  --set global.namespaceOverride="mongodb" \
-  --set imagePullSecrets[0].name="altregistry-secret" \
-  -n mongodb
-
-kubectl -n mongodb get pods
-CMD
-echo ""
-
-# ============================================
-# SCENARIO 6: Multi-Environment Deployment
-# ============================================
-echo "Scenario 6: Multi-Environment"
+echo "Scenario 7: Custom values file"
 echo "------------------------------"
 cat <<'CMD'
-# Development
-helm install dev-toolbox ../chart \
-  --set global.imageRegistry="registry.dev.local" \
-  --set image.tag="dev" \
-  -n dev-tools --create-namespace
-
-# Staging
-helm install staging-toolbox ../chart \
-  --set global.imageRegistry="registry.staging.local" \
-  --set image.tag="staging" \
-  -n staging-tools --create-namespace
-
-# Production
-helm install prod-toolbox ../chart \
-  --set global.imageRegistry="registry.prod.local" \
-  --set image.tag="v1.0.2" \
-  --set replicaCount=3 \
-  --set resources.limits.memory=8Gi \
-  -n prod-tools --create-namespace
-CMD
-echo ""
-
-# ============================================
-# SCENARIO 7: Using Values Files
-# ============================================
-echo "Scenario 7: Using Custom Values Files"
-echo "--------------------------------------"
-cat <<'CMD'
-# Create custom values file
-cat > my-values.yaml <<EOF
+cat > my-values.yaml <<'EOF'
 global:
-  imageRegistry: "myregistry.local:5000"
-  
-image:
-  repository: "platform/toolbox"
-  tag: "v1.2.0"
-  
-imagePullSecrets:
-  - name: my-regcred
+  imageRegistry: "registry.example.com/library"
 
-replicaCount: 2
+image:
+  repository: "ultimate-k8s-toolbox"
+  tag: "v1.1.0"
+
+imagePullSecrets:
+  - name: regcred
+
+workspace:
+  enabled: true
+  storageClass: ""
+  size: "10Gi"
 
 resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
   limits:
-    cpu: "4"
-    memory: "8Gi"
-
-nodeSelector:
-  disktype: ssd
+    cpu: "2"
+    memory: "2Gi"
 EOF
 
-# Deploy using custom values
-helm install my-toolbox ../chart \
+helm upgrade --install toolbox ../chart \
   -f my-values.yaml \
   -n toolbox --create-namespace
 CMD
+
 echo ""
-
-# ============================================
-# SCENARIO 8: Upgrade Scenarios
-# ============================================
-echo "Scenario 8: Upgrade Operations"
-echo "-------------------------------"
+echo "Scenario 8: PostgreSQL diagnostics"
+echo "----------------------------------"
 cat <<'CMD'
-# Upgrade image version
-helm upgrade toolbox ../chart \
-  --reuse-values \
-  --set image.tag=v1.1.0 \
-  -n toolbox
+kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
 
-# Scale replicas
-helm upgrade toolbox ../chart \
-  --reuse-values \
-  --set replicaCount=5 \
-  -n toolbox
-
-# Change resources
-helm upgrade toolbox ../chart \
-  --reuse-values \
-  --set resources.limits.memory=16Gi \
-  -n toolbox
-
-# Rollback if needed
-helm rollback toolbox 1 -n toolbox
+# Inside the toolbox container, source PostgreSQL connection details from your approved secret workflow.
+pg_isready
+pg-diagnostics.sh
+pg_dump --schema-only --file=/workspace/schema.sql
 CMD
+
 echo ""
-
-# ============================================
-# SCENARIO 9: Package and Install from Archive
-# ============================================
-echo "Scenario 9: Package and Deploy from Archive"
-echo "--------------------------------------------"
+echo "Scenario 9: Package and install from chart archive"
+echo "--------------------------------------------------"
 cat <<'CMD'
-# Package the chart
-helm package ../chart
+helm package ../chart -d /tmp
 
-# This creates: ultimate-k8s-toolbox-chart-1.0.2.tgz
-
-# Install from package
-helm install my-toolbox ultimate-k8s-toolbox-chart-1.0.2.tgz \
-  -f values-offline.yaml \
+helm upgrade --install toolbox /tmp/ultimate-k8s-toolbox-1.1.0.tgz \
   -n toolbox --create-namespace
-
-# Or install from URL (if hosted)
-helm install my-toolbox https://charts.example.co../ultimate-k8s-toolbox-chart-1.0.2.tgz \
-  -f values-offline.yaml \
-  -n toolbox
 CMD
+
 echo ""
-
-# ============================================
-# SCENARIO 10: Dry-run and Template Testing
-# ============================================
-echo "Scenario 10: Testing and Validation"
-echo "------------------------------------"
+echo "Scenario 10: Dry-run and template validation"
+echo "---------------------------------------------"
 cat <<'CMD'
-# Dry-run installation
-helm install test-toolbox ../chart \
-  -f values-offline.yaml \
+helm lint ../chart
+
+helm template toolbox ../chart \
+  -n toolbox
+
+helm upgrade --install toolbox ../chart \
   --dry-run \
-  -n toolbox
-
-# Template rendering
-helm template test-toolbox ../chart \
-  -f values-offline.yaml \
-  -n toolbox
-
-# Specific template output
-helm template test-toolbox ../chart \
-  -f values-offline.yaml \
-  -s templates/deployment.yaml
-
-# Debug mode
-helm install test-toolbox ../chart \
-  -f values-offline.yaml \
   --debug \
   -n toolbox
 CMD
-echo ""
 
-# ============================================
-# Common Management Commands
-# ============================================
-echo "Common Management Commands"
+echo ""
+echo "Common management commands"
 echo "--------------------------"
 cat <<'CMD'
-# List all releases
 helm list -A
-
-# Get release information
-helm get all toolbox -n toolbox
-
-# Get values
-helm get values toolbox -n toolbox
-
-# History
-helm history toolbox -n toolbox
-
-# Status
 helm status toolbox -n toolbox
-
-# Uninstall
+helm get values toolbox -n toolbox
+kubectl get pods -n toolbox
+kubectl logs -n toolbox deploy/toolbox-ultimate-k8s-toolbox
+kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
 helm uninstall toolbox -n toolbox
-
-# Cleanup namespace
-kubectl delete namespace toolbox
 CMD
-echo ""
 
+echo ""
 echo "============================================"
 echo "For more information, see:"
-echo "  - README.md"
-echo "  - QUICKSTART.md"
-echo "  - OFFLINE-DEPLOYMENT.md"
+echo "  - ../README.md"
+echo "  - ../QUICKSTART.md"
+echo "  - ../KEYCLOAK-GUIDE.md"
+echo "  - ../OFFLINE-DEPLOYMENT.md"
 echo "============================================"
