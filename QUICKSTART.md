@@ -11,10 +11,10 @@ cd k8s-ultimate-toolbox
 helm upgrade --install toolbox ./chart \
   -n toolbox --create-namespace
 
-kubectl wait --for=condition=available deploy/toolbox-ultimate-k8s-toolbox \
+kubectl wait --for=condition=available deploy/toolbox-k8s-ultimate-toolbox \
   -n toolbox --timeout=300s
 
-kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
+kubectl exec -n toolbox -it deploy/toolbox-k8s-ultimate-toolbox -- bash
 ```
 
 Inside the pod:
@@ -105,7 +105,7 @@ calicoctl get ippools
 The default toolbox container includes `kcadm.sh`, `kcreg.sh`, `kc.sh`, and `keycloak-login.sh`. No sidecar is needed.
 
 ```bash
-kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
+kubectl exec -n toolbox -it deploy/toolbox-k8s-ultimate-toolbox -- bash
 keycloak-login.sh
 kcadm.sh get realms
 ```
@@ -115,7 +115,7 @@ kcadm.sh get realms
 Set the PostgreSQL host, port, database, and user in your shell. Source credentials from your approved secret workflow instead of typing them into shared shell history.
 
 ```bash
-kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
+kubectl exec -n toolbox -it deploy/toolbox-k8s-ultimate-toolbox -- bash
 pg_isready
 pg-diagnostics.sh
 ```
@@ -145,10 +145,10 @@ On an internet-connected build host:
 make offline-bundle
 ```
 
-Transfer `dist/ultimate-k8s-toolbox-offline-v1.2.0.tar.gz` to the offline environment, extract it, load/push the image to the internal registry, then install the packaged chart.
+Transfer `dist/k8s-ultimate-toolbox-offline-v1.2.0.tar.gz` to the offline environment, extract it, load/push the image to the internal registry, then install the packaged chart.
 
 ```bash
-tar -xzf ultimate-k8s-toolbox-offline-v1.2.0.tar.gz
+tar -xzf k8s-ultimate-toolbox-offline-v1.2.0.tar.gz
 cd offline-bundle
 cat SBOM.txt
 ```
@@ -158,8 +158,8 @@ cat SBOM.txt
 ```bash
 helm list -n toolbox
 kubectl get pods -n toolbox
-kubectl logs -n toolbox -l app.kubernetes.io/name=ultimate-k8s-toolbox
-kubectl describe pod -n toolbox -l app.kubernetes.io/name=ultimate-k8s-toolbox
+kubectl logs -n toolbox -l app.kubernetes.io/name=k8s-ultimate-toolbox
+kubectl describe pod -n toolbox -l app.kubernetes.io/name=k8s-ultimate-toolbox
 kubectl get events -n toolbox --sort-by='.lastTimestamp'
 helm get values toolbox -n toolbox
 helm upgrade toolbox ./chart --reuse-values -n toolbox
