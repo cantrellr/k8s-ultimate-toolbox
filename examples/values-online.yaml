@@ -1,18 +1,10 @@
-# Online deployment - pulls from Docker Hub or public registry
-# Use this configuration when deploying in an environment with internet access
-# 
-# NOTE: This requires the ultimate-k8s-toolbox image to be published to a public registry
-# Or build and push the image first:
-#   docker build -t myregistry/ultimate-k8s-toolbox:v1.0.2 build/
-#   docker push myregistry/ultimate-k8s-toolbox:v1.0.2
-
 global:
-  imageRegistry: ""  # Empty means use default Docker Hub or full image path
+  imageRegistry: ""
   namespaceOverride: ""
 
 image:
-  repository: "ultimate-k8s-toolbox"  # Full-featured toolbox with all tools
-  tag: "v1.0.2"
+  repository: "k8s-ultimate-toolbox"
+  tag: "v1.2.0"
   pullPolicy: IfNotPresent
 
 serviceAccount:
@@ -23,7 +15,7 @@ serviceAccount:
 resources:
   requests:
     cpu: "100m"
-    memory: "256Mi"
+    memory: "512Mi"
   limits:
-    cpu: "1"
-    memory: "2Gi"
+    cpu: "2"
+    memory: "3Gi"
