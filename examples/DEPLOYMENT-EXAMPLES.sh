@@ -33,6 +33,9 @@ kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
 kcadm.sh --help
 kcreg.sh --help
 kc.sh --help
+command -v keycloak-login.sh
+
+# After sourcing approved Keycloak environment variables:
 keycloak-login.sh
 kcadm.sh get realms
 CMD
