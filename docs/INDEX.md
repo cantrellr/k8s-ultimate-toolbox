@@ -2,7 +2,7 @@
 
 **v1.2.0 Platform Diagnostics Release**
 
-> Kubernetes administration workstation tooling for cluster, identity, database, runtime, control-plane, certificate, policy, CNI, network, storage, and air-gapped troubleshooting.
+> Kubernetes administration workstation tooling for cluster, identity, database, runtime, control-plane, certificate, policy, SELinux, audit, CNI, network, storage, and air-gapped troubleshooting.
 
 ## Core documentation
 
@@ -11,6 +11,7 @@
 | [README.md](../README.md) | Main project overview, architecture, and release highlights | Start here |
 | [QUICKSTART.md](../QUICKSTART.md) | Fast deployment and validation guide | Get running fast |
 | [TOOLS-REFERENCE.md](../TOOLS-REFERENCE.md) | Current tool inventory and version matrix | Confirm what is installed |
+| [SELINUX-UTILITIES.md](../SELINUX-UTILITIES.md) | SELinux/audit tooling and offline package bundle guide | Build or install SELinux utilities in air-gapped environments |
 | [POSTGRESQL-DIAGNOSTICS.md](../POSTGRESQL-DIAGNOSTICS.md) | PostgreSQL troubleshooting runbook | Triage PostgreSQL issues |
 | [KEYCLOAK-GUIDE.md](../KEYCLOAK-GUIDE.md) | Keycloak CLI usage in the default toolbox container | Work with Keycloak |
 | [RECOMMENDED-TOOLS.md](../RECOMMENDED-TOOLS.md) | Implemented and future tooling roadmap | Plan the next capability bump |
@@ -32,6 +33,12 @@ helm upgrade --install toolbox ./chart -n toolbox --create-namespace
 kubectl wait --for=condition=available deploy/toolbox-k8s-ultimate-toolbox -n toolbox --timeout=300s
 kubectl exec -it -n toolbox deploy/toolbox-k8s-ultimate-toolbox -- bash
 show-versions.sh
+```
+
+## SELinux air-gap bundle
+
+```bash
+make selinux-bundle
 ```
 
 ## Key configuration options
