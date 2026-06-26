@@ -425,8 +425,11 @@ collect_quick_common_storage() {
     overlay="$(read_storage_overlay_quick)"
     IFACE_STORAGE_OVERLAY[$storage_iface]="$overlay"
     STORAGE_SOURCES="$(prompt_cidrs "Storage peer CIDR(s), blank for any on storage NIC: ")"
-    [[ "$overlay" == "custom" ]] && STORAGE_CUSTOM_SPECS="$(prompt_specs "Custom storage specs, e.g. tcp/2049 tcp/3260: ")"
+    if [[ "$overlay" == "custom" ]]; then
+      STORAGE_CUSTOM_SPECS="$(prompt_specs "Custom storage specs, e.g. tcp/2049 tcp/3260: ")"
+    fi
   fi
+  return 0
 }
 
 collect_quick_contour() {
@@ -448,6 +451,7 @@ collect_quick_contour() {
       ROUTE_VIP="yes"
     fi
   fi
+  return 0
 }
 
 collect_quick() {
