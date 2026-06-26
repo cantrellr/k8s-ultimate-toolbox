@@ -1,4 +1,4 @@
-# Quick Start - Ultimate K8s Toolbox
+# Quick Start - K8s Ultimate Toolbox
 
 This guide gets the v1.1.0 toolbox running and validates the Kubernetes, Keycloak, MongoDB, and PostgreSQL tooling.
 
@@ -59,16 +59,10 @@ curl -Iv https://internal-service.example.com
 
 ## 4. Keycloak usage
 
-The primary toolbox image includes Keycloak CLI tools.
+The primary toolbox image includes Keycloak CLI tools. Use `keycloak-login.sh` after setting the Keycloak URL, realm, and admin user in the shell. Keep the credential in a Kubernetes Secret, a short-lived shell session, or another approved secret source. Do not paste production credentials into shared terminal history. That is how small mistakes become incident reports.
 
 ```bash
 kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
-
-export KEYCLOAK_URL=https://keycloak.example.com
-export KEYCLOAK_USER=admin
-export KEYCLOAK_PASSWORD='<secret>'
-export KEYCLOAK_REALM=master
-
 keycloak-login.sh
 kcadm.sh get realms
 ```
@@ -85,15 +79,10 @@ kubectl exec -n keycloak-system -it deploy/toolbox-ultimate-k8s-toolbox -c keycl
 
 ## 5. PostgreSQL diagnostics
 
+Set the PostgreSQL host, port, database, and user in your shell. Source the credential from your approved secret workflow instead of typing it into shared shell history.
+
 ```bash
 kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
-
-export PGHOST=postgres.postgres.svc.cluster.local
-export PGPORT=5432
-export PGDATABASE=postgres
-export PGUSER=postgres
-export PGPASSWORD='<secret>'
-
 pg_isready
 pg-diagnostics.sh
 ```
@@ -105,7 +94,6 @@ psql -c 'select version();'
 psql -c "select state, count(*) from pg_stat_activity group by state order by count(*) desc;"
 psql -c "select pid, now() - query_start as age, wait_event_type, wait_event, left(query, 200) from pg_stat_activity where state <> 'idle' order by age desc limit 10;"
 pg_dump --schema-only --file=/workspace/schema.sql
-pgbench --initialize --scale=1 --host="$PGHOST" --username="$PGUSER" "$PGDATABASE"
 ```
 
 For log analysis:
