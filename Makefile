@@ -23,12 +23,14 @@ help:
 	@echo "make test-image"
 	@echo "make package-chart"
 	@echo "make offline-bundle"
+	@echo "make selinux-bundle"
 
 .PHONY: info
 info:
 	@echo "Chart: $(CHART_NAME) $(CHART_VERSION)"
 	@echo "Image: $(TOOLBOX_IMAGE)"
 	@echo "Bundle: $(BUNDLE_ARCHIVE)"
+	@echo "SELinux bundle: dist/selinux-utils-bundle/*.tar.gz"
 
 .PHONY: build-image
 build-image:
@@ -36,13 +38,17 @@ build-image:
 
 .PHONY: test-image
 test-image:
-	docker run --rm $(TOOLBOX_IMAGE) bash -lc 'show-versions.sh && command -v kubectl helm yq kcadm.sh psql mongosh tridentctl crictl etcdctl etcdutl cmctl step kubent kubeconform popeye kubectl-who-can rbac-lookup cilium hubble calicoctl >/dev/null'
+	docker run --rm $(TOOLBOX_IMAGE) bash -lc 'show-versions.sh && command -v kubectl helm yq kcadm.sh psql mongosh tridentctl crictl etcdctl etcdutl cmctl step kubent kubeconform popeye kubectl-who-can rbac-lookup cilium hubble calicoctl getenforce sestatus semanage semodule seinfo sesearch checkpolicy checkmodule audit2allow audit2why ausearch aureport >/dev/null'
 
 .PHONY: package-chart
 package-chart:
 	helm lint $(CHART_DIR)/
 	mkdir -p $(BUNDLE_DIR)/charts
 	helm package $(CHART_DIR)/ -d $(BUNDLE_DIR)/charts
+
+.PHONY: selinux-bundle
+selinux-bundle:
+	./scripts/build-selinux-utils-bundle.sh
 
 .PHONY: offline-bundle
 offline-bundle: build-image package-chart
