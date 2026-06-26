@@ -1,27 +1,23 @@
 apiVersion: v2
 name: ultimate-k8s-toolbox
-description: |
-  A comprehensive Kubernetes administration workstation with pinned tooling for
-  cluster, identity, database, networking, storage, and air-gapped diagnostics.
-  Includes Kubernetes, Helm, MongoDB, Keycloak, PostgreSQL, TLS, and network
-  troubleshooting utilities.
+description: K8s Ultimate Toolbox diagnostic workstation
 type: application
-version: 1.1.0
-appVersion: "1.1.0"
+version: 1.2.0
+appVersion: "1.2.0"
 keywords:
   - kubernetes
   - toolbox
   - kubectl
   - helm
-  - debugging
   - troubleshooting
-  - air-gapped
-  - offline
   - keycloak
   - postgresql
   - mongodb
-  - sre
-  - platform-engineering
+  - etcd
+  - cert-manager
+  - cilium
+  - calico
+  - rbac
 maintainers:
   - name: Cantrell R
     url: https://github.com/cantrellr
