@@ -1,10 +1,9 @@
-# Ultimate Kubernetes Toolbox
+# K8s Ultimate Toolbox
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════╗
 ║                                                                       ║
-║   █░█ █░░ ▀█▀ █ █▀▄▀█ ▄▀█ ▀█▀ █▀▀   █▄▀ ▄▀█ █▀   ▀█▀ █▀█ █▀█ █░░      ║
-║   █▄█ █▄▄ ░█░ █ █░▀░█ █▀█ ░█░ ██▄   █░█ ▀▀█ ▄█   ░█░ █▄█ █▄█ █▄▄      ║
+║                         K8s Ultimate Toolbox                          ║
 ║                                                                       ║
 ║                 Platform Diagnostics Release - v1.1.0                 ║
 ╚═══════════════════════════════════════════════════════════════════════╝
@@ -18,7 +17,7 @@
 
 ## Executive summary
 
-Ultimate Kubernetes Toolbox deploys a controlled, repeatable troubleshooting pod into a Kubernetes namespace. It is designed for platform engineers who need fast access to known-good tools without turning every application container into a debugging science project.
+K8s Ultimate Toolbox deploys a controlled, repeatable troubleshooting pod into a Kubernetes namespace. It is designed for platform engineers who need fast access to known-good tools without turning every application container into a debugging science project.
 
 The v1.1.0 release updates the core toolchain, adds first-class Keycloak support, and adds PostgreSQL diagnostics that are useful in the real world: readiness checks, connection inspection, lock analysis, query visibility, backup/restore validation, `pgBadger`, `pgcli`, `pg_activity`, and the helper script `pg-diagnostics.sh`.
 
