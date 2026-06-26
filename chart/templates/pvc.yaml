@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "ultimate-k8s-toolbox.fullname" . }}-workspace
+  name: {{ include "k8s-ultimate-toolbox.fullname" . }}-workspace
   labels:
-    {{- include "ultimate-k8s-toolbox.labels" . | nindent 4 }}
+    {{- include "k8s-ultimate-toolbox.labels" . | nindent 4 }}
 spec:
   accessModes:
     - ReadWriteMany
