@@ -1,4 +1,4 @@
-# 🚀 Ultimate K8s Admin Workstation - Quick Reference
+# 🚀 K8s Ultimate Toolbox - Quick Reference
 
 **One-page cheat sheet for the most common operations**
 
@@ -235,7 +235,7 @@ iperf3 -c iperf-server.local
 - **[README.md](README.md)** - Complete feature overview
 - **[NERDCTL-GUIDE.md](NERDCTL-GUIDE.md)** - nerdctl setup guide
 - **[TOOLS-REFERENCE.md](TOOLS-REFERENCE.md)** - Detailed tool reference with examples
-- **[INDEX.md](INDEX.md)** - Project navigation
+- **[docs/INDEX.md](docs/INDEX.md)** - Project navigation
 
 ---
 
