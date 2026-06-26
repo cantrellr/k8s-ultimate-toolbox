@@ -1,208 +1,156 @@
-# 📚 Ultimate K8s Toolbox - Documentation Index
+# 📚 K8s Ultimate Toolbox - Documentation Index
 
-**v1.0.2 "First Flight" Release**
+**v1.1.0 Platform Diagnostics Release**
 
-> A comprehensive Kubernetes administration workstation with 50+ pre-installed tools
+> Kubernetes administration workstation tooling for cluster, identity, database, network, storage, and air-gapped troubleshooting.
 
 ---
 
-## 📖 Quick Navigation
+## 📖 Quick navigation
 
-### Core Documentation
+### Core documentation
 
-| Document | Description | When to Use |
+| Document | Description | When to use |
 |----------|-------------|-------------|
-| [README.md](README.md) | Main project overview, features, architecture | Start here |
-| [QUICKSTART.md](QUICKSTART.md) | 5-minute deployment guide | Get running fast |
-| [TOOLS-REFERENCE.md](TOOLS-REFERENCE.md) | Complete tool list with examples | Learn available tools |
-| [CHANGELOG.md](CHANGELOG.md) | Version history and release notes | See what's new |
+| [README.md](../README.md) | Main project overview, architecture, and release highlights | Start here |
+| [QUICKSTART.md](../QUICKSTART.md) | Fast deployment and validation guide | Get running fast |
+| [TOOLS-REFERENCE.md](../TOOLS-REFERENCE.md) | Current tool inventory and version matrix | Confirm what is installed |
+| [POSTGRESQL-DIAGNOSTICS.md](../POSTGRESQL-DIAGNOSTICS.md) | PostgreSQL troubleshooting runbook | Triage PostgreSQL connectivity, locks, activity, and reports |
+| [KEYCLOAK-GUIDE.md](../KEYCLOAK-GUIDE.md) | Keycloak CLI and sidecar usage | Work with Keycloak realms, clients, and admin sessions |
+| [RECOMMENDED-TOOLS.md](../RECOMMENDED-TOOLS.md) | Recommended future additions and priority | Plan the next capability bump |
+| [CHANGELOG.md](../CHANGELOG.md) | Version history and release notes | See what changed |
 
-### Deployment Guides
+### Deployment and build guides
 
-| Document | Description | When to Use |
+| Document | Description | When to use |
 |----------|-------------|-------------|
-| [OFFLINE-DEPLOYMENT.md](OFFLINE-DEPLOYMENT.md) | Air-gapped deployment guide | No internet access |
-| [NERDCTL-GUIDE.md](NERDCTL-GUIDE.md) | Container runtime setup | Building images |
-| [MAKEFILE.md](MAKEFILE.md) | Build system documentation | Automation & CI |
-| [SBOM.md](SBOM.md) | Software Bill of Materials | Security & compliance |
+| [OFFLINE-DEPLOYMENT.md](../OFFLINE-DEPLOYMENT.md) | Air-gapped bundle workflow | No internet access or controlled registry imports |
+| [NERDCTL-GUIDE.md](../NERDCTL-GUIDE.md) | Container runtime guidance | Build or load images with containerd/nerdctl |
+| [MAKEFILE.md](../MAKEFILE.md) | Build system notes | Automation, packaging, and CI-like tasks |
+| [SBOM.md](../SBOM.md) | SBOM and supply-chain notes | Security review and compliance evidence |
 
-### Community & Contributing
+### Community and governance
 
 | Document | Description |
 |----------|-------------|
-| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community guidelines |
-| [SECURITY.md](SECURITY.md) | Security policy |
-| [LICENSE](LICENSE) | MIT License |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | Contribution workflow and coding expectations |
+| [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | Community guidelines |
+| [SECURITY.md](../SECURITY.md) | Security reporting and operating guidance |
+| [LICENSE](../LICENSE) | MIT License |
 
 ---
 
-## 📁 Project Structure
+## 📁 Project structure
 
-```
-ultimate-k8s-toolbox/
-├── 📄 README.md                 # Main documentation
-├── 📄 QUICKSTART.md             # Quick deployment guide
-├── 📄 TOOLS-REFERENCE.md        # Tool documentation
-├── 📄 OFFLINE-DEPLOYMENT.md     # Air-gapped guide
-├── 📄 NERDCTL-GUIDE.md          # Container runtime guide
-├── 📄 MAKEFILE.md               # Build system docs
-├── 📄 SBOM.md                   # SBOM documentation
-├── 📄 QUICK-REFERENCE.md        # Cheat sheet
-├── 📄 CHANGELOG.md              # Release history
-├── 📄 CONTRIBUTING.md           # Contribution guide
-├── 📄 CODE_OF_CONDUCT.md        # Community guidelines
-├── 📄 SECURITY.md               # Security policy
-├── 📄 LICENSE                   # MIT License
-├── 📄 Makefile                  # Build automation
+```text
+k8s-ultimate-toolbox/
+├── README.md                    # Main documentation
+├── QUICKSTART.md                # Quick deployment guide
+├── TOOLS-REFERENCE.md           # Current tool inventory and version matrix
+├── POSTGRESQL-DIAGNOSTICS.md    # PostgreSQL troubleshooting runbook
+├── KEYCLOAK-GUIDE.md            # Keycloak operations guide
+├── RECOMMENDED-TOOLS.md         # Tooling roadmap
+├── OFFLINE-DEPLOYMENT.md        # Air-gapped guide
+├── NERDCTL-GUIDE.md             # Container runtime guide
+├── MAKEFILE.md                  # Build system docs
+├── SBOM.md                      # SBOM documentation
+├── QUICK-REFERENCE.md           # Cheat sheet
+├── CHANGELOG.md                 # Release history
+├── CONTRIBUTING.md              # Contribution guide
+├── CODE_OF_CONDUCT.md           # Community guidelines
+├── SECURITY.md                  # Security policy
+├── LICENSE                      # MIT License
+├── Makefile                     # Build automation
 │
-├── 📁 build/
+├── build/
 │   └── Dockerfile               # Container image definition
 │
-├── 📁 chart/                    # Helm chart
+├── chart/                       # Helm chart
 │   ├── Chart.yaml               # Chart metadata
 │   ├── values.yaml              # Default configuration
-│   └── templates/
-│       ├── _helpers.tpl         # Template helpers
-│       ├── deployment.yaml      # Deployment manifest
-│       └── serviceaccount.yaml  # ServiceAccount + RBAC
+│   └── templates/               # Kubernetes manifests
 │
-├── 📁 configs/
-│   └── example-values-offline.yaml  # Offline deployment config
-│
-├── 📁 examples/
-│   ├── README.md                # Examples documentation
-│   ├── values-online.yaml       # Online deployment
-│   ├── values-offline.yaml      # Offline deployment
-│   ├── values-mongodb.yaml      # MongoDB namespace example
-│   ├── values-with-ca.yaml      # Custom CA example
-│   ├── patch-host-aliases.yaml  # /etc/hosts patch
-│   ├── coredns-custom-forward.yaml  # DNS forwarding
-│   └── DEPLOYMENT-EXAMPLES.sh   # CLI examples
-│
-├── 📁 scripts/
-│   ├── deploy-offline.sh.template   # Offline deploy script
-│   ├── import-ca-certs.sh       # CA certificate helper
-│   ├── install-toolbox.sh       # CLI installer
-│   └── toolbox                  # Quick exec script
-│
-├── 📁 tests/
-│   ├── README.md                # Test documentation
-│   ├── test-helm-chart.sh       # Helm chart tests
-│   └── TEST-RESULTS.md          # Test results
-│
-└── 📁 .github/
-    ├── ISSUE_TEMPLATE/          # Issue templates
-    ├── PULL_REQUEST_TEMPLATE.md # PR template
-    └── workflows/               # CI/CD pipelines
+├── docs/                        # Secondary navigation and compatibility docs
+├── examples/                    # Example values and deployment snippets
+├── scripts/                     # Install, exec, CA, and offline helper scripts
+├── tests/                       # Helm/chart validation scripts and notes
+└── .github/                     # GitHub templates and workflows
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick start
 
-### Online Deployment
+### Online deployment
 
 ```bash
-# Deploy
 helm install toolbox ./chart -n toolbox --create-namespace
-
-# Access
+kubectl wait --for=condition=available deploy/toolbox-ultimate-k8s-toolbox \
+  -n toolbox --timeout=300s
 kubectl exec -it -n toolbox deploy/toolbox-ultimate-k8s-toolbox -- bash
-
-# Or use helper script
-./scripts/toolbox
 ```
 
-### Offline Deployment
+### Offline deployment
 
 ```bash
-# Create bundle
 make offline-bundle
-
-# Transfer and deploy
 ./scripts/deploy-offline.sh --registry registry.local:5000 --namespace toolbox
 ```
 
 ---
 
-## 📦 Configuration Files
-
-### Values Files
-
-| File | Purpose | Location |
-|------|---------|----------|
-| `values.yaml` | Default configuration | `chart/values.yaml` |
-| `values-online.yaml` | Internet-connected deployment | `examples/` |
-| `values-offline.yaml` | Air-gapped deployment | `examples/` |
-| `values-mongodb.yaml` | MongoDB namespace | `examples/` |
-| `values-with-ca.yaml` | Custom CA certificates | `examples/` |
-
-### Key Configuration Options
+## 📦 Key configuration options
 
 ```yaml
-# Registry for offline deployments
 global:
   imageRegistry: "registry.example.com:5000"
 
-# Image settings
 image:
   repository: "ultimate-k8s-toolbox"
-  tag: "v1.0.2"
+  tag: "v1.1.0"
 
-# Custom CA certificates
 customCA:
   enabled: true
   secretName: "ca-certs"
 
-# Resources
-resources:
-  requests:
-    cpu: "100m"
-    memory: "256Mi"
-  limits:
-    cpu: "2"
-    memory: "4Gi"
+workspace:
+  enabled: true
+  storageClass: ""
+  size: "10Gi"
+
+keycloakCli:
+  enabled: false
 ```
 
 ---
 
-## 🛠️ Build Commands
+## 🛠️ Build commands
 
 ```bash
-# Build image
-make build
-
-# Multi-arch build
-make build-multi
-
-# Create offline bundle
+make info
+make build-image
+make test-image
+make package-chart
 make offline-bundle
-
-# Generate SBOM
 make sbom
-
-# Run tests
-make test
-
-# View all targets
-make help
+make clean
 ```
 
 ---
 
-## 📊 Deployment Scenarios
+## 📊 Deployment scenarios
 
-| Scenario | Values File | Guide |
-|----------|-------------|-------|
-| Online (with internet) | `values-online.yaml` | [QUICKSTART.md](QUICKSTART.md) |
-| Offline (air-gapped) | `values-offline.yaml` | [OFFLINE-DEPLOYMENT.md](OFFLINE-DEPLOYMENT.md) |
-| With custom CA | `values-with-ca.yaml` | [OFFLINE-DEPLOYMENT.md](OFFLINE-DEPLOYMENT.md) |
-| MongoDB namespace | `values-mongodb.yaml` | [examples/README.md](examples/README.md) |
+| Scenario | Primary guide |
+|----------|---------------|
+| Online / connected cluster | [QUICKSTART.md](../QUICKSTART.md) |
+| Offline / air-gapped cluster | [OFFLINE-DEPLOYMENT.md](../OFFLINE-DEPLOYMENT.md) |
+| Internal CA trust | [OFFLINE-DEPLOYMENT.md](../OFFLINE-DEPLOYMENT.md) |
+| Keycloak CLI sidecar | [KEYCLOAK-GUIDE.md](../KEYCLOAK-GUIDE.md) |
+| PostgreSQL triage | [POSTGRESQL-DIAGNOSTICS.md](../POSTGRESQL-DIAGNOSTICS.md) |
 
 ---
 
-## 🔗 External Resources
+## 🔗 External resources
 
 - [Helm Documentation](https://helm.sh/docs/)
 - [Kubernetes Documentation](https://kubernetes.io/docs/)
@@ -210,15 +158,15 @@ make help
 
 ---
 
-## 📬 Getting Help
+## 📬 Getting help
 
-1. **Quick questions** → [QUICKSTART.md](QUICKSTART.md)
-2. **Tool usage** → [TOOLS-REFERENCE.md](TOOLS-REFERENCE.md)
-3. **Offline deployment** → [OFFLINE-DEPLOYMENT.md](OFFLINE-DEPLOYMENT.md)
-4. **Build issues** → [MAKEFILE.md](MAKEFILE.md)
-5. **Bug reports** → [GitHub Issues](https://github.com/cantrellr/ultimate-k8s-toolbox/issues)
-6. **Feature requests** → [GitHub Discussions](https://github.com/cantrellr/ultimate-k8s-toolbox/discussions)
+1. **Quick questions** → [QUICKSTART.md](../QUICKSTART.md)
+2. **Tool inventory** → [TOOLS-REFERENCE.md](../TOOLS-REFERENCE.md)
+3. **Offline deployment** → [OFFLINE-DEPLOYMENT.md](../OFFLINE-DEPLOYMENT.md)
+4. **Build issues** → [MAKEFILE.md](../MAKEFILE.md)
+5. **Bug reports** → [GitHub Issues](https://github.com/cantrellr/k8s-ultimate-toolbox/issues)
+6. **Feature requests** → [GitHub Discussions](https://github.com/cantrellr/k8s-ultimate-toolbox/discussions)
 
 ---
 
-*✈️ "First Flight" Release - v1.0.2*
+*Platform Diagnostics Release - v1.1.0*
