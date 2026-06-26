@@ -6,6 +6,7 @@ We release patches for security vulnerabilities in the following versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 1.1.x   | :white_check_mark: |
 | 1.0.x   | :white_check_mark: |
 
 ## Reporting a Vulnerability
@@ -19,7 +20,7 @@ We take security vulnerabilities seriously. If you discover a security issue, pl
 Instead, please report them via one of the following methods:
 
 1. **GitHub Security Advisories**: Use GitHub's private vulnerability reporting feature at:
-   https://github.com/cantrellr/ultimate-k8s-toolbox/security/advisories/new
+   https://github.com/cantrellr/k8s-ultimate-toolbox/security/advisories/new
 
 2. **Email**: Send details to the repository owner (check profile for contact information)
 
@@ -51,7 +52,7 @@ Please include the following information in your report:
 
 ## Security Best Practices
 
-When using the Ultimate K8s Toolbox, we recommend the following security practices:
+When using K8s Ultimate Toolbox, we recommend the following security practices:
 
 ### Container Security
 
@@ -152,7 +153,7 @@ We follow a coordinated vulnerability disclosure process:
 
 ## Security Updates
 
-Security updates are released as patch versions (e.g., 1.0.2, 1.0.3) and announced via:
+Security updates are released as patch versions (e.g., 1.1.1, 1.1.2) and announced via:
 
 - GitHub Releases
 - Security Advisories
@@ -164,4 +165,4 @@ For security-related inquiries that don't involve vulnerability reports, please 
 
 ---
 
-Thank you for helping keep Ultimate K8s Toolbox and its users safe!
+Thank you for helping keep K8s Ultimate Toolbox and its users safe!
