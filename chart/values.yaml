@@ -1,4 +1,4 @@
-# Ultimate K8s Toolbox Helm values
+# K8s Ultimate Toolbox Helm values
 
 workspace:
   enabled: true
@@ -72,7 +72,7 @@ container:
   args:
     - |
       echo "==========================================";
-      echo "Ultimate Kubernetes Toolbox v1.1.0 Ready";
+      echo "K8s Ultimate Toolbox v1.1.0 Ready";
       echo "==========================================";
       echo "Pod Name: $HOSTNAME";
       echo "Namespace: ${POD_NAMESPACE:-default}";
@@ -95,7 +95,7 @@ container:
       tail -f /dev/null
 
   env: []
-    # PostgreSQL diagnostic example. Prefer secrets for credentials.
+    # PostgreSQL diagnostic example. Prefer Kubernetes Secrets for credentials.
     # - name: PGHOST
     #   value: "postgres.postgres.svc.cluster.local"
     # - name: PGPORT
@@ -112,7 +112,7 @@ container:
     #     secretKeyRef:
     #       name: postgres-admin
     #       key: password
-    # Keycloak helper example:
+    # Keycloak helper example. Keycloak CLI tools are installed in the default toolbox container.
     # - name: KEYCLOAK_URL
     #   value: "https://keycloak.example.com"
     # - name: KEYCLOAK_USER
@@ -127,33 +127,6 @@ container:
     #       key: password
 
   volumeMounts: []
-
-# Optional Keycloak CLI sidecar for environments where the main image cannot be rebuilt
-# or where identity operations should be logically separated from the primary toolbox shell.
-keycloakCli:
-  enabled: false
-  image:
-    repository: "quay.io/keycloak/keycloak"
-    tag: "26.6.3"
-    pullPolicy: IfNotPresent
-    fullImageOverride: ""
-  securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-    readOnlyRootFilesystem: false
-  command:
-    - /bin/sh
-    - -c
-  args:
-    - |
-      echo "==========================================";
-      echo "Keycloak CLI Sidecar Ready";
-      echo "==========================================";
-      echo "Available tools: kcadm.sh, kcreg.sh, kc.sh";
-      echo "Access: kubectl -n ${POD_NAMESPACE:-default} exec -it $HOSTNAME -c keycloak-cli -- /bin/sh";
-      tail -f /dev/null
 
 volumes: []
 
