@@ -1,11 +1,13 @@
 # Keycloak Operations Guide
 
-The toolbox includes Keycloak CLI support in two ways:
+The default K8s Ultimate Toolbox image includes Keycloak CLI support directly in the primary `toolbox` container:
 
-1. The primary toolbox image includes `kcadm.sh`, `kcreg.sh`, and `kc.sh` from Keycloak `26.6.3`.
-2. The Helm chart can optionally deploy an official Keycloak CLI sidecar using `quay.io/keycloak/keycloak:26.6.3`.
+- `kcadm.sh`
+- `kcreg.sh`
+- `kc.sh`
+- `keycloak-login.sh`
 
-Use the primary image for normal platform operations. Use the sidecar when you want identity tooling isolated from the rest of the diagnostic workstation.
+There is no separate Keycloak sidecar. That keeps the deployment simpler, reduces image pull complexity in air-gapped environments, and avoids a second operational shell with a different toolchain.
 
 ## Deploy with built-in Keycloak tools
 
@@ -22,29 +24,14 @@ Validate:
 kcadm.sh --help
 kcreg.sh --help
 kc.sh --help
-```
-
-## Deploy with Keycloak sidecar
-
-```bash
-helm upgrade --install toolbox ./chart \
-  -n keycloak-system --create-namespace \
-  --set keycloakCli.enabled=true
-
-kubectl exec -n keycloak-system -it deploy/toolbox-ultimate-k8s-toolbox -c keycloak-cli -- /bin/sh
+keycloak-login.sh --help 2>/dev/null || true
 ```
 
 ## Authenticate
 
-The helper script uses environment variables and intentionally avoids printing secrets.
+The helper script uses environment variables and intentionally avoids printing secrets. Source sensitive values from Kubernetes Secrets, your password manager, or a short-lived approved access workflow. Do not put production credentials into Git, Helm values, screenshots, or shared shell history.
 
 ```bash
-export KEYCLOAK_URL=https://keycloak.example.com
-export KEYCLOAK_USER=admin
-export KEYCLOAK_PASSWORD='<secret>'
-export KEYCLOAK_REALM=master
-export KEYCLOAK_CLIENT=admin-cli
-
 keycloak-login.sh
 ```
 
