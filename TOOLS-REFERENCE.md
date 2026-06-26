@@ -1,4 +1,4 @@
-# Tools Reference - Ultimate K8s Toolbox v1.1.0
+# Tools Reference - K8s Ultimate Toolbox v1.1.0
 
 This file is the operator-facing inventory for the toolbox image. It lists the pinned tools, their purpose, and the first command to run when troubleshooting.
 
