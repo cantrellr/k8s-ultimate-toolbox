@@ -15,7 +15,7 @@ There is no separate Keycloak sidecar. That keeps the deployment simpler, reduce
 helm upgrade --install toolbox ./chart \
   -n toolbox --create-namespace
 
-kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
+kubectl exec -n toolbox -it deploy/toolbox-k8s-ultimate-toolbox -- bash
 ```
 
 Validate:
