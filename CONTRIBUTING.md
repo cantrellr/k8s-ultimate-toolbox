@@ -1,8 +1,8 @@
-# Contributing to Ultimate K8s Toolbox
+# Contributing to K8s Ultimate Toolbox
 
-First off, thank you for considering contributing to Ultimate K8s Toolbox! ✈️
+First off, thank you for considering contributing to K8s Ultimate Toolbox! ✈️
 
-This project aims to be the most comprehensive Kubernetes administration toolkit available, and contributions from the community help make it better for everyone.
+This project aims to be a comprehensive Kubernetes administration toolkit, and contributions from the community help make it better for everyone.
 
 ## Table of Contents
 
@@ -73,7 +73,7 @@ Want to add a new tool to the toolbox? Great! Here's how:
 ### Prerequisites
 
 - Docker or nerdctl/containerd
-- Helm 3.x
+- Helm 3.x or newer
 - kubectl
 - Make
 
@@ -81,8 +81,8 @@ Want to add a new tool to the toolbox? Great! Here's how:
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR-USERNAME/ultimate-k8s-toolbox.git
-cd ultimate-k8s-toolbox
+git clone https://github.com/YOUR-USERNAME/k8s-ultimate-toolbox.git
+cd k8s-ultimate-toolbox
 
 # Build the image
 make build
@@ -189,6 +189,6 @@ Contributors will be recognized in our [CHANGELOG](CHANGELOG.md) and release not
 
 ---
 
-Thank you for helping make Ultimate K8s Toolbox better! 🚀
+Thank you for helping make K8s Ultimate Toolbox better! 🚀
 
 *"Per aspera ad astra"* - Through hardships to the stars
