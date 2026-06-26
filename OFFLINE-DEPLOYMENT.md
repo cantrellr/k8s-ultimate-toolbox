@@ -14,11 +14,10 @@ The build host needs internet access and the following tools:
 Validate:
 
 ```bash
-make check-dependencies
 make info
 ```
 
-## Build the offline bundle
+## Build the offline toolbox bundle
 
 ```bash
 make offline-bundle
@@ -32,7 +31,28 @@ dist/k8s-ultimate-toolbox-offline-v1.2.0.tar.gz
 
 The bundle contains a packaged Helm chart, image tarball, image checksum, deployment helper script, SBOM text summary, and documentation.
 
-## Transfer to offline environment
+## Build the SELinux utilities host bundle
+
+When you also need SELinux utilities installed directly on an air-gapped Ubuntu/Debian host, build the separate `.deb` dependency tarball from a matching internet-connected system:
+
+```bash
+make selinux-bundle
+```
+
+Expected output:
+
+```text
+dist/selinux-utils-bundle/*.tar.gz
+```
+
+Copy that tarball to the target host, extract it, and run:
+
+```bash
+tar -xzf selinux-utils-*.tar.gz
+./install-selinux-utils.sh
+```
+
+## Transfer toolbox bundle to offline environment
 
 ```bash
 scp dist/k8s-ultimate-toolbox-offline-v1.2.0.tar.gz user@offline-host:/tmp/
@@ -79,8 +99,9 @@ kubectl -n toolbox rollout status deploy/toolbox-k8s-ultimate-toolbox --timeout=
 kubectl -n toolbox exec -it deploy/toolbox-k8s-ultimate-toolbox -- bash
 show-versions.sh
 command -v crictl etcdctl etcdutl cmctl step kubent kubeconform popeye kubectl-who-can rbac-lookup cilium hubble calicoctl
+command -v getenforce sestatus semanage semodule seinfo sesearch checkpolicy checkmodule audit2allow audit2why ausearch aureport
 ```
 
 ## Notes
 
-The v1.2.0 image is larger than v1.1.0 because it now includes runtime, control-plane, certificate, upgrade, access-review, and CNI diagnostic tools. That is intentional; the value is fewer ad-hoc debug containers during incidents.
+The v1.2.0 image is larger than v1.1.0 because it now includes runtime, control-plane, certificate, upgrade, access-review, CNI, SELinux, and audit diagnostic tools. That is intentional; the value is fewer ad-hoc debug containers during incidents.
