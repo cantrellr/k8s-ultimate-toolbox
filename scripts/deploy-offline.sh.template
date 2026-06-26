@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Offline deployment script for Ultimate K8s Toolbox.
+# Offline deployment script for K8s Ultimate Toolbox.
 # This script is copied into the generated offline bundle and patched by Makefile.
 
 REGISTRY=${REGISTRY:-"kuberegistry.k8.cantrellcloud.net:8443/library"}
 NAMESPACE=${NAMESPACE:-"toolbox"}
 RELEASE_NAME=${RELEASE_NAME:-"toolbox"}
 IMAGE_REPO=${IMAGE_REPO:-"ultimate-k8s-toolbox"}
-IMAGE_TAG=${IMAGE_TAG:-"v1.1.0"}
+IMAGE_TAG=${IMAGE_TAG:-"v1.2.0"}
 CA_SECRET_NAME=${CA_SECRET_NAME:-"toolbox-ca-certs"}
 ROOT_CA_PATH=${ROOT_CA_PATH:-""}
 SUBORDINATE_CA_PATH=${SUBORDINATE_CA_PATH:-""}
@@ -79,36 +79,24 @@ run kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl app
 
 if [[ "$SKIP_REGISTRY_PUSH" != "true" ]]; then
   [[ -f "$IMAGE_TAR" ]] || fail "Image tar not found: ${IMAGE_TAR}"
-
-  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-    log "Loading image with Docker"
+  if command -v docker >/dev/null 2>&1; then
     run docker load -i "$IMAGE_TAR"
     run docker tag "${IMAGE_REPO}:${IMAGE_TAG}" "$FULL_IMAGE"
     run docker push "$FULL_IMAGE"
   elif command -v nerdctl >/dev/null 2>&1; then
-    log "Loading image with nerdctl"
     run nerdctl load -i "$IMAGE_TAR"
     run nerdctl tag "${IMAGE_REPO}:${IMAGE_TAG}" "$FULL_IMAGE"
     run nerdctl push "$FULL_IMAGE"
   else
-    fail "Docker or nerdctl is required unless --skip-registry-push is used"
+    fail "docker or nerdctl is required unless --skip-registry-push is used"
   fi
-else
-  log "Skipping registry push; assuming ${FULL_IMAGE} already exists"
 fi
 
 if [[ "$ENABLE_CA" == "true" ]]; then
-  args=()
+  args=(create secret generic "$CA_SECRET_NAME" -n "$NAMESPACE" --dry-run=client -o yaml)
   [[ -n "$ROOT_CA_PATH" ]] && args+=(--from-file="root-ca.crt=${ROOT_CA_PATH}")
   [[ -n "$SUBORDINATE_CA_PATH" ]] && args+=(--from-file="subordinate-ca.crt=${SUBORDINATE_CA_PATH}")
-  [[ ${#args[@]} -gt 0 ]] || fail "CA enabled but no CA files were provided"
-
-  log "Creating CA secret ${CA_SECRET_NAME}"
-  if [[ "$DRY_RUN" == "true" ]]; then
-    echo "+ kubectl -n ${NAMESPACE} create secret generic ${CA_SECRET_NAME} ${args[*]} --dry-run=client -o yaml | kubectl apply -f -"
-  else
-    kubectl -n "$NAMESPACE" create secret generic "$CA_SECRET_NAME" "${args[@]}" --dry-run=client -o yaml | kubectl apply -f -
-  fi
+  run kubectl "${args[@]}" | kubectl apply -f -
 fi
 
 helm_args=(
@@ -117,14 +105,16 @@ helm_args=(
   --set "global.imageRegistry=${REGISTRY%/}"
   --set "image.repository=${IMAGE_REPO}"
   --set "image.tag=${IMAGE_TAG}"
-  --set "customCA.enabled=${ENABLE_CA}"
-  --set "customCA.secretName=${CA_SECRET_NAME}"
 )
 
-log "Installing Helm release"
-run helm "${helm_args[@]}"
+if [[ "$ENABLE_CA" == "true" ]]; then
+  helm_args+=(--set customCA.enabled=true --set "customCA.secretName=${CA_SECRET_NAME}")
+fi
 
-log "Waiting for deployment"
-run kubectl -n "$NAMESPACE" rollout status deploy/"${RELEASE_NAME}-ultimate-k8s-toolbox" --timeout=300s || true
+if [[ "$DRY_RUN" == "true" ]]; then
+  echo "+ helm ${helm_args[*]}"
+else
+  helm "${helm_args[@]}"
+fi
 
-log "Done. Access with: kubectl -n ${NAMESPACE} exec -it deploy/${RELEASE_NAME}-ultimate-k8s-toolbox -- bash"
+log "Deployment submitted. Validate with: kubectl -n ${NAMESPACE} get pods"
