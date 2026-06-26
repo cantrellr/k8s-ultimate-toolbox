@@ -58,4 +58,4 @@ The image helper is:
 k8s-ultimate-toolbox.image
 ```
 
-Do not reintroduce `ultimate-k8s-toolbox` in chart names, image names, helper names, labels, examples, scripts, docs, or workflows.
+Keep chart names, image names, helper names, labels, examples, scripts, docs, and workflows aligned to the current `k8s-ultimate-toolbox` spelling.
