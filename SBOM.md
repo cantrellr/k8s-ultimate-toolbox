@@ -1,13 +1,12 @@
 # SBOM and Supply Chain Notes
 
-K8s Ultimate Toolbox v1.1.0 generates a lightweight SBOM during `make offline-bundle`.
+K8s Ultimate Toolbox v1.2.0 generates a lightweight SBOM during `make offline-bundle`.
 
 ## Generated files
 
 | File | Purpose |
 |---|---|
 | `SBOM.txt` | Human-readable component summary |
-| `SBOM.json` | CycloneDX-style JSON summary |
 | `images/*.sha256` | SHA256 checksum for exported image tarball |
 
 ## Pinned components
@@ -21,6 +20,18 @@ The build pins the external binary components that are downloaded directly durin
 - `mongosh 2.8.3`
 - `MongoDB Database Tools 100.17.0`
 - `tridentctl 26.02.0`
+- `crictl v1.36.0`
+- `etcdctl/etcdutl v3.6.12`
+- `cmctl v2.2.0`
+- `step v0.30.2`
+- `kubent 0.7.3`
+- `kubeconform v0.8.0`
+- `popeye v0.22.1`
+- `kubectl-who-can v0.4.0`
+- `rbac-lookup v0.10.3`
+- `cilium v0.19.2`
+- `hubble v1.18.6`
+- `calicoctl v3.32.0`
 - `nerdctl 2.3.2` for build-host fallback workflows
 
 The remaining Linux packages are sourced from Ubuntu 24.04 package repositories, and Python packages are installed from PyPI during the online build phase.
