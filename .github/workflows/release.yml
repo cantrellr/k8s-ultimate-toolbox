@@ -50,7 +50,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.VERSION }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           labels: |
-            org.opencontainers.image.title=Ultimate K8s Toolbox
+            org.opencontainers.image.title=K8s Ultimate Toolbox
             org.opencontainers.image.description=Comprehensive Kubernetes administration workstation
             org.opencontainers.image.version=${{ steps.version.outputs.VERSION }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -79,7 +79,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            ultimate-k8s-toolbox-${{ steps.version.outputs.VERSION }}.tgz
+            k8s-ultimate-toolbox-${{ steps.version.outputs.VERSION }}.tgz
             sbom-${{ steps.version.outputs.VERSION }}.spdx.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
