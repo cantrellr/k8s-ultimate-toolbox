@@ -9,6 +9,9 @@ All notable changes to this project will be documented in this file.
 - Updated outward-facing documentation branding from `Ultimate K8s Toolbox` / `Ultimate Kubernetes Toolbox` to `K8s Ultimate Toolbox`.
 - Reworked the documentation index so it points to the canonical root documentation and current `k8s-ultimate-toolbox` repository URLs.
 - Replaced the stale duplicate `docs/TOOLS-REFERENCE.md` content with a compatibility pointer to the maintained root `TOOLS-REFERENCE.md` file.
+- Removed the optional Keycloak CLI sidecar path from the Helm chart and documentation.
+- Standardized Keycloak operations on the default `toolbox` container, which already includes `kcadm.sh`, `kcreg.sh`, `kc.sh`, and `keycloak-login.sh`.
+- Updated Helm chart tests to assert that rendered and deployed workloads use a single runtime container named `toolbox`.
 
 ## [1.1.0] - 2026-06-21
 
@@ -28,7 +31,6 @@ All notable changes to this project will be documented in this file.
 - Updated Helm to `v4.2.1`.
 - Updated `yq` to `v4.53.3`.
 - Updated Keycloak CLI distribution to `26.6.3`.
-- Updated optional Keycloak sidecar image to `quay.io/keycloak/keycloak:26.6.3`.
 - Updated `mongosh` to `2.8.3`.
 - Updated MongoDB Database Tools to `100.17.0`.
 - Updated `tridentctl` to `26.02.0`.
