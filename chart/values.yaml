@@ -21,7 +21,7 @@ global:
 replicaCount: 1
 
 image:
-  repository: "ultimate-k8s-toolbox"
+  repository: "k8s-ultimate-toolbox"
   tag: "v1.2.0"
   pullPolicy: IfNotPresent
 
