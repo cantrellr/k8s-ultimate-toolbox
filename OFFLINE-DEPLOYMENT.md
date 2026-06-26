@@ -1,6 +1,6 @@
 # Offline Deployment Guide
 
-This guide covers building and deploying Ultimate K8s Toolbox v1.1.0 in an air-gapped or registry-isolated environment.
+This guide covers building and deploying K8s Ultimate Toolbox v1.1.0 in an air-gapped or registry-isolated environment.
 
 ## Build host requirements
 
