@@ -13,6 +13,17 @@ All notable changes to this project will be documented in this file.
 - Standardized Keycloak operations on the default `toolbox` container, which already includes `kcadm.sh`, `kcreg.sh`, `kc.sh`, and `keycloak-login.sh`.
 - Updated Helm chart tests to assert that rendered and deployed workloads use a single runtime container named `toolbox`.
 
+## [1.2.0] - 2026-06-25
+
+### Added
+
+- Added `crictl`, `etcdctl`, `etcdutl`, `cmctl`, `step`, `kubent`, `kubeconform`, `popeye`, `kubectl-who-can`, `rbac-lookup`, `cilium`, `hubble`, and `calicoctl`.
+
+### Changed
+
+- Bumped chart, app, image, and offline bundle defaults to `1.2.0` / `v1.2.0`.
+- Updated Dockerfile, Makefile, README, Quick Start, SBOM notes, tools reference, offline deployment docs, and recommended-tooling roadmap for the implemented toolset.
+
 ## [1.1.0] - 2026-06-21
 
 ### Added
