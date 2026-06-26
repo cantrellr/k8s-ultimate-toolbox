@@ -22,7 +22,7 @@ replicaCount: 1
 
 image:
   repository: "ultimate-k8s-toolbox"
-  tag: "v1.1.0"
+  tag: "v1.2.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -41,11 +41,11 @@ podLabels: {}
 
 resources:
   requests:
-    cpu: "50m"
-    memory: "256Mi"
+    cpu: "100m"
+    memory: "512Mi"
   limits:
     cpu: "2"
-    memory: "2Gi"
+    memory: "3Gi"
 
 nodeSelector: {}
 tolerations: []
@@ -72,14 +72,18 @@ container:
   args:
     - |
       echo "==========================================";
-      echo "K8s Ultimate Toolbox v1.1.0 Ready";
+      echo "K8s Ultimate Toolbox v1.2.0 Ready";
       echo "==========================================";
       echo "Pod Name: $HOSTNAME";
       echo "Namespace: ${POD_NAMESPACE:-default}";
       echo "";
       echo "Primary tool groups:";
       echo "  - Kubernetes: kubectl, helm, yq, jq";
+      echo "  - Runtime/control-plane: crictl, etcdctl, etcdutl";
       echo "  - Identity: kcadm.sh, kcreg.sh, kc.sh, keycloak-login.sh";
+      echo "  - Certificates/PKI: cmctl, step, openssl, certtool";
+      echo "  - Policy/RBAC/upgrade: kubent, kubeconform, popeye, kubectl-who-can, rbac-lookup";
+      echo "  - CNI: cilium, hubble, calicoctl";
       echo "  - PostgreSQL: psql, pg_isready, pg_dump, pg_restore, pgbench, pgcli, pg_activity, pgbadger, pg-diagnostics.sh";
       echo "  - MongoDB: mongosh, mongodump, mongorestore, mongoexport, mongoimport, mongostat, mongotop";
       echo "  - Storage: tridentctl, nfs-common, rsync, ssh";
@@ -107,11 +111,6 @@ container:
     #     secretKeyRef:
     #       name: postgres-admin
     #       key: username
-    # - name: PGPASSWORD
-    #   valueFrom:
-    #     secretKeyRef:
-    #       name: postgres-admin
-    #       key: password
     # Keycloak helper example. Keycloak CLI tools are installed in the default toolbox container.
     # - name: KEYCLOAK_URL
     #   value: "https://keycloak.example.com"
@@ -120,11 +119,11 @@ container:
     #     secretKeyRef:
     #       name: keycloak-admin
     #       key: username
-    # - name: KEYCLOAK_PASSWORD
+    # - name: KEYCLOAK_SECRET
     #   valueFrom:
     #     secretKeyRef:
     #       name: keycloak-admin
-    #       key: password
+    #       key: credential
 
   volumeMounts: []
 
