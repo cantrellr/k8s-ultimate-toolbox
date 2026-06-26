@@ -4,7 +4,7 @@
 
 NAMESPACE="${1:-toolbox}"
 
-POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=ultimate-k8s-toolbox \
+POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=k8s-ultimate-toolbox \
   --field-selector=status.phase=Running \
   -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null)
 
