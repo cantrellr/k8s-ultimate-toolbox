@@ -34,7 +34,7 @@ The v1.2.0 release implements the recommended next additions: `crictl`, `etcdctl
 ```text
 Kubernetes Cluster
 └── toolbox namespace
-    └── Deployment: ultimate-k8s-toolbox
+    └── Deployment: k8s-ultimate-toolbox
         ├── init container: update-ca-trust      # optional, root, CA trust only
         ├── container: toolbox                  # non-root UID 10000
         │   ├── kubectl / helm / yq / jq
@@ -59,10 +59,10 @@ cd k8s-ultimate-toolbox
 helm upgrade --install toolbox ./chart \
   -n toolbox --create-namespace
 
-kubectl wait --for=condition=available deploy/toolbox-ultimate-k8s-toolbox \
+kubectl wait --for=condition=available deploy/toolbox-k8s-ultimate-toolbox \
   -n toolbox --timeout=300s
 
-kubectl exec -it -n toolbox deploy/toolbox-ultimate-k8s-toolbox -- bash
+kubectl exec -it -n toolbox deploy/toolbox-k8s-ultimate-toolbox -- bash
 ```
 
 Show installed tools:
@@ -87,33 +87,6 @@ show-versions.sh
 | Storage | `tridentctl`, `nfs-common`, `rsync`, `ssh`, `tar`, `zip`, `unzip` |
 | Scripting | Python 3, `kubernetes`, `requests`, `PyYAML`, `Jinja2`, `click`, `SQLAlchemy` |
 
-## Common examples
-
-```bash
-# Runtime and control-plane checks
-crictl ps -a
-etcdctl endpoint health --cluster
-etcdutl snapshot status /workspace/snapshot.db
-
-# Certificate and PKI checks
-cmctl check api
-step certificate inspect /path/to/cert.crt --short
-
-# Upgrade and policy hygiene
-kubent
-kubeconform -summary rendered.yaml
-popeye
-
-# RBAC inspection
-kubectl-who-can get secrets -A
-rbac-lookup system:serviceaccount:default:default
-
-# CNI checks where applicable
-cilium status
-hubble status
-calicoctl get ippools
-```
-
 ## Documentation
 
 | Document | Purpose |
@@ -133,7 +106,7 @@ calicoctl get ippools
 
 | Value | Default | Notes |
 |---|---:|---|
-| `image.repository` | `ultimate-k8s-toolbox` | Toolbox image repository |
+| `image.repository` | `k8s-ultimate-toolbox` | Toolbox image repository |
 | `image.tag` | `v1.2.0` | Deterministic default image tag |
 | `global.imageRegistry` | empty | Prefix for private/offline registries |
 | `workspace.enabled` | `true` | Mounts `/workspace` |
