@@ -1,6 +1,6 @@
 # Quick Start - K8s Ultimate Toolbox
 
-This guide gets the v1.1.0 toolbox running and validates the Kubernetes, Keycloak, MongoDB, and PostgreSQL tooling.
+This guide gets the v1.2.0 toolbox running and validates the Kubernetes, runtime, Keycloak, MongoDB, PostgreSQL, RBAC, policy, and CNI tooling.
 
 ## 1. Deploy online
 
@@ -8,7 +8,7 @@ This guide gets the v1.1.0 toolbox running and validates the Kubernetes, Keycloa
 git clone https://github.com/cantrellr/k8s-ultimate-toolbox.git
 cd k8s-ultimate-toolbox
 
-helm install toolbox ./chart \
+helm upgrade --install toolbox ./chart \
   -n toolbox --create-namespace
 
 kubectl wait --for=condition=available deploy/toolbox-ultimate-k8s-toolbox \
@@ -23,18 +23,24 @@ Inside the pod:
 show-versions.sh
 ```
 
-## 2. Deploy with persistent workspace
-
-Use this when you want to keep generated reports, exported manifests, PostgreSQL log reports, or packet captures.
+## 2. Validate v1.2.0 additions
 
 ```bash
-helm install toolbox ./chart \
+command -v crictl etcdctl etcdutl cmctl step kubent kubeconform popeye kubectl-who-can rbac-lookup cilium hubble calicoctl
+```
+
+## 3. Deploy with persistent workspace
+
+Use this when you want to keep generated reports, exported manifests, PostgreSQL log reports, snapshots, or packet captures.
+
+```bash
+helm upgrade --install toolbox ./chart \
   -n toolbox --create-namespace \
   --set workspace.storageClass=<storage-class> \
   --set workspace.size=20Gi
 ```
 
-## 3. Deploy with internal CA certificates
+## 4. Deploy with internal CA certificates
 
 ```bash
 kubectl create namespace toolbox --dry-run=client -o yaml | kubectl apply -f -
@@ -44,7 +50,7 @@ kubectl create secret generic toolbox-ca-certs \
   --from-file=subordinate-ca.crt=/path/to/subordinate-ca.crt \
   -n toolbox
 
-helm install toolbox ./chart \
+helm upgrade --install toolbox ./chart \
   -n toolbox \
   --set customCA.enabled=true \
   --set customCA.secretName=toolbox-ca-certs
@@ -57,11 +63,46 @@ update-ca-trust.sh --list
 curl -Iv https://internal-service.example.com
 ```
 
-## 4. Keycloak usage
+## 5. Runtime and control-plane diagnostics
+
+```bash
+crictl ps -a
+crictl images
+etcdctl endpoint health --cluster
+etcdutl snapshot status /workspace/snapshot.db
+```
+
+## 6. Certificate and PKI diagnostics
+
+```bash
+cmctl check api
+cmctl status certificate <certificate-name> -n <namespace>
+step certificate inspect /path/to/cert.crt --short
+```
+
+## 7. RBAC, policy, and upgrade diagnostics
+
+```bash
+kubent
+kubeconform -summary rendered.yaml
+popeye
+kubectl-who-can get pods -A
+rbac-lookup system:serviceaccount:default:default
+```
+
+## 8. CNI diagnostics
+
+Use these only where the matching CNI exists in the target cluster.
+
+```bash
+cilium status
+hubble status
+calicoctl get ippools
+```
+
+## 9. Keycloak usage
 
 The default toolbox container includes `kcadm.sh`, `kcreg.sh`, `kc.sh`, and `keycloak-login.sh`. No sidecar is needed.
-
-Use `keycloak-login.sh` after setting the Keycloak URL, realm, and admin user in the shell. Keep credentials in Kubernetes Secrets, a short-lived shell session, or another approved secret source. Do not paste production credentials into shared terminal history. That is how small mistakes become incident reports.
 
 ```bash
 kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
@@ -69,9 +110,9 @@ keycloak-login.sh
 kcadm.sh get realms
 ```
 
-## 5. PostgreSQL diagnostics
+## 10. PostgreSQL diagnostics
 
-Set the PostgreSQL host, port, database, and user in your shell. Source the credential from your approved secret workflow instead of typing it into shared shell history.
+Set the PostgreSQL host, port, database, and user in your shell. Source credentials from your approved secret workflow instead of typing them into shared shell history.
 
 ```bash
 kubectl exec -n toolbox -it deploy/toolbox-ultimate-k8s-toolbox -- bash
@@ -79,22 +120,7 @@ pg_isready
 pg-diagnostics.sh
 ```
 
-Useful one-liners:
-
-```bash
-psql -c 'select version();'
-psql -c "select state, count(*) from pg_stat_activity group by state order by count(*) desc;"
-psql -c "select pid, now() - query_start as age, wait_event_type, wait_event, left(query, 200) from pg_stat_activity where state <> 'idle' order by age desc limit 10;"
-pg_dump --schema-only --file=/workspace/schema.sql
-```
-
-For log analysis:
-
-```bash
-pgbadger /workspace/postgresql.log -o /workspace/postgres-report.html
-```
-
-## 6. MongoDB diagnostics
+## 11. MongoDB diagnostics
 
 ```bash
 mongosh "$MONGODB_URI"
@@ -103,7 +129,7 @@ mongotop --uri "$MONGODB_URI" 5
 mongodump --uri "$MONGODB_URI" --archive=/workspace/mongodb.archive --gzip
 ```
 
-## 7. Build and test the image
+## 12. Build and test the image
 
 ```bash
 make info
@@ -111,7 +137,7 @@ make build-image
 make test-image
 ```
 
-## 8. Offline bundle
+## 13. Offline bundle
 
 On an internet-connected build host:
 
@@ -119,16 +145,15 @@ On an internet-connected build host:
 make offline-bundle
 ```
 
-Transfer `dist/ultimate-k8s-toolbox-offline-v1.1.0.tar.gz` to the offline environment, extract it, load/push the image to the internal registry, then install the packaged chart.
+Transfer `dist/ultimate-k8s-toolbox-offline-v1.2.0.tar.gz` to the offline environment, extract it, load/push the image to the internal registry, then install the packaged chart.
 
 ```bash
-tar -xzf ultimate-k8s-toolbox-offline-v1.1.0.tar.gz
+tar -xzf ultimate-k8s-toolbox-offline-v1.2.0.tar.gz
 cd offline-bundle
-cat MANIFEST.txt 2>/dev/null || true
 cat SBOM.txt
 ```
 
-## 9. Common operations
+## 14. Common operations
 
 ```bash
 helm list -n toolbox
@@ -139,15 +164,6 @@ kubectl get events -n toolbox --sort-by='.lastTimestamp'
 helm get values toolbox -n toolbox
 helm upgrade toolbox ./chart --reuse-values -n toolbox
 helm uninstall toolbox -n toolbox
-```
-
-## 10. Troubleshooting install failures
-
-```bash
-helm lint ./chart
-helm template toolbox ./chart -n toolbox --debug
-kubectl describe deploy toolbox-ultimate-k8s-toolbox -n toolbox
-kubectl describe pod -n toolbox -l app.kubernetes.io/name=ultimate-k8s-toolbox
 ```
 
 Hard truth: most failures here are image pull paths, missing registry credentials, insufficient RBAC, or clusters blocking `NET_ADMIN`/`NET_RAW` through Pod Security Admission. Check those first before chasing ghosts.
